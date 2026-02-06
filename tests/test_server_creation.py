@@ -1,54 +1,52 @@
 """Tests for server creation."""
 
-import threading
 import time
 
 import anyio
-from mcp_grpc_transport.server import FastMCPGrpc
-from mcp_grpc_transport.server import GrpcTransportSettings
+from grpc import aio
+from mcp.server.fastmcp import FastMCP
+from mcp_grpc_transport.server import grpc_server
 
 from tests import test_utils
 
 
 def test_server_creation_and_run():
-  """Tests server creation and run."""
+  """Tests if the FastMCP server can be served via gRPC."""
   port = test_utils.find_free_port()
   target = f'localhost:{port}'
 
-  mcp_grpc_server = FastMCPGrpc(
-      target=target,
+  fastmcp_server = FastMCP(
       name='test-server',
-      description='this is a sample test server',
   )
 
-  assert mcp_grpc_server.name == 'test-server'
-  assert mcp_grpc_server.description == 'this is a sample test server'
-  assert mcp_grpc_server.target == target
+  server = None
+  try:
+    server = grpc_server.create_mcp_grpc_server(fastmcp_server, target)
 
-  run_thread = threading.Thread(target=mcp_grpc_server.run, daemon=True)
-  run_thread.start()
+    time.sleep(0.2)
 
-  time.sleep(0.2)
-
-  anyio.run(mcp_grpc_server.stop_grpc_server, 0.5)
-  run_thread.join(timeout=5)  # 5 seconds timeout to join
-
-  assert not run_thread.is_alive(), 'mcp.run() thread did not terminate'
+  finally:
+    if server is not None:
+      anyio.run(grpc_server.stop_grpc_server, server, 0.5)
 
 
-def test_server_creation_and_run_grpc_async():
-  """Tests server creation and run_grpc_async."""
+def test_attach_mcp_server_to_grpc_server():
+  """Tests if attach_mcp_server_to_grpc_server attaches servicer."""
   port = test_utils.find_free_port()
   target = f'localhost:{port}'
+  fastmcp_server = FastMCP(name='test-server')
+  server = aio.server()
 
-  mcp_grpc_server = FastMCPGrpc(
-      target=target,
-      name='test-server',
-      description='this is a sample test server',
+  grpc_server.attach_mcp_server_to_grpc_server(
+      fastmcp_server, server
   )
+  server.add_insecure_port(target)
 
-  assert mcp_grpc_server.name == 'test-server'
-  assert mcp_grpc_server.description == 'this is a sample test server'
-  assert mcp_grpc_server.target == target
+  async def _run():
+    try:
+      await server.start()
+      await anyio.sleep(0.2)
+    finally:
+      await server.stop(0.5)
 
-  anyio.run(test_utils.run_server_for_test, mcp_grpc_server)
+  anyio.run(_run)

@@ -1,9 +1,20 @@
-"""Utility functions for testing."""
+"""Utility functions and classes for testing."""
 
 import anyio
+import asyncio
+import base64
+import grpc
 import socket
 from contextlib import closing
+from typing import Any
 
+from mcp.server import fastmcp
+from mcp_grpc_transport.server import grpc_server as grpc_server_lib
+from mcp_grpc_transport_proto import mcp_pb2_grpc
+from mcp import types as mcp_types
+from mcp_grpc_transport.utils import version_utils
+
+from pydantic import AnyUrl
 
 def find_free_port():
   """Finds a free port."""
@@ -18,3 +29,157 @@ async def run_server_for_test(mcp_grpc_server):
     tg.start_soon(mcp_grpc_server.run_grpc_async)
     await anyio.sleep(0.2)
     await mcp_grpc_server.stop_grpc_server(0.5)
+
+
+class TestServerWithTools:
+  """A test server with tools that can be used for testing ListTools and CallTool RPCs.
+
+  The test server has the following tools:
+    - add: Adds two numbers.
+    - echo: Echoes back a message.
+    - download_file: Simulates downloading a file with progress updates.
+    - test_image_output: Used for testing image content response.
+    - test_audio_output: Used for testing audio content response.
+    - test_resource_output: Used for testing resource link response.
+    - test_embedded_resource_text_output: Used for testing response of an 
+        embedded resource with text content.
+    - test_embedded_resource_blob_output: Used for testing response of an 
+        embedded resource with blob content.
+    - test_combination_output: Used for testing response of a combination of 
+        unstructured content.
+    - test_structured_output: Used for testing response of a structured output.
+    - invalidTool: Raises an exception.
+    - tool_with_wrong_output: Used for testing response of a value that does
+        not match the output schema.
+
+  The last 2 tools are used for testing error handling for CallTool RPC.
+  """
+
+  def __init__(self):
+    # Create a FastMCP Server instance
+    self.mcp_server = fastmcp.FastMCP("TestServer")
+    self.version_metadata = [
+        (
+            version_utils.MCP_PROTOCOL_VERSION_KEY,
+            mcp_types.LATEST_PROTOCOL_VERSION,
+        )
+    ]
+
+    # Register tools
+    @self.mcp_server.tool(name="add")
+    def add(a: int, b: int) -> int:
+      """Add two numbers."""
+      return a + b
+
+    @self.mcp_server.tool(name="echo")
+    def echo(message: str) -> str:
+      """Echo back a message."""
+      return "Hello " + message
+
+    @self.mcp_server.tool(name="download_file")
+    async def download_file(
+        filename: str, size_mb: float, ctx: fastmcp.Context
+    ) -> str:
+      """Simulate downloading a file with progress updates."""
+      total_bytes = int(size_mb * 1024 * 1024)
+      chunk_size = 64 * 1024
+      downloaded = 0
+
+      while downloaded < total_bytes:
+        await asyncio.sleep(0.01)  # Faster for tests
+
+        downloaded += chunk_size
+        if downloaded > total_bytes:
+          downloaded = total_bytes
+
+        progress = downloaded / total_bytes
+
+        await ctx.report_progress(
+            progress, 1.0, f"Downloaded {downloaded} bytes"
+        )
+
+      return f"Successfully downloaded {filename}"
+
+    @self.mcp_server.tool(name="tool_with_image_output")
+    def tool_with_image_output() -> mcp_types.ImageContent:
+      """Test tool that returns an image."""
+      image_data = base64.b64encode(b"fake image data").decode()
+      return mcp_types.ImageContent(
+          type="image", data=image_data, mimeType="image/png",
+      )
+
+    @self.mcp_server.tool(name="tool_with_audio_output")
+    def tool_with_audio_output() -> mcp_types.AudioContent:
+      """Test tool that returns an image."""
+      audio_data = base64.b64encode(b"fake audio data").decode()
+      return mcp_types.AudioContent(
+          type="audio", data=audio_data, mimeType="audio/wav",
+      )
+
+    @self.mcp_server.tool(name="tool_with_resource_output")
+    def tool_with_resource_output() -> mcp_types.ResourceLink:
+      """Test tool that returns a resource link."""
+      return mcp_types.ResourceLink(
+          uri=AnyUrl("https://www.google.com"),
+          type="resource_link",
+          name="resource uri",
+          title="Google",
+          mimeType="text/html",
+      )
+
+    @self.mcp_server.tool(name="tool_with_embedded_resource_text_output")
+    def tool_with_embedded_resource_text_output() -> mcp_types.EmbeddedResource:
+      """Test tool that returns an embedded resource with text content."""
+      return mcp_types.EmbeddedResource(
+          type="resource",
+          resource=mcp_types.TextResourceContents(
+              uri=AnyUrl("https://www.google.com"),
+              text="text content",
+              mimeType="text/plain",
+          ),
+      )
+
+    @self.mcp_server.tool(name="tool_with_embedded_resource_blob_output")
+    def tool_with_embedded_resource_blob_output() -> mcp_types.EmbeddedResource:
+      """Test tool that returns an embedded resource with blob content."""
+      return mcp_types.EmbeddedResource(
+          type="resource",
+          resource=mcp_types.BlobResourceContents(
+              uri=AnyUrl("https://www.google.com"),
+              blob=base64.b64encode(b"blob content").decode(),
+              mimeType="application/octet-stream",
+          ),
+      )
+
+    @self.mcp_server.tool(name="tool_with_structured_output")
+    def tool_with_structured_output() -> dict[str, Any]:
+      """Test tool that returns a structured output."""
+      return {"structured_output": "test"}
+
+    @self.mcp_server.tool(name="invalidTool")
+    def tool_that_raises() -> None:
+      """This tool is expected to raise an exception."""
+      raise ValueError("invalid tool")
+
+    @self.mcp_server.tool(name="tool_with_wrong_output")
+    def tool_with_wrong_output() -> str:
+      """This tool intentionally returns a value that does not match the output schema."""
+      return 123
+
+    # Create the servicer
+    self.port = None
+    self.grpc_server = None
+
+  async def start_grpc_server(self):
+    self.port = find_free_port()
+    self.grpc_server = await grpc_server_lib.create_mcp_grpc_server(
+        self.mcp_server, f"localhost:{self.port}"
+    )
+
+
+class TestServerClient:
+  """A test client used to connect to the test server and send RPCs."""
+
+  def __init__(self, port: int):
+    self.channel = grpc.aio.insecure_channel(f"localhost:{port}")
+    self.stub = mcp_pb2_grpc.McpStub(self.channel)
