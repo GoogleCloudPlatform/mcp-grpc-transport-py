@@ -27,10 +27,6 @@ class GRPCRequestContext(RequestContext[SessionT, Any, Any], Generic[SessionT]):
     meta_dict: dict[str, Any] = {}
 
     if common is not None:
-      # simple mapping of progress token
-      if common.HasField("progress"):
-        meta_dict["progressToken"] = common.progress.progress_token
-
       # Map arbitrary metadata
       if common.HasField("metadata"):
         meta_dict.update(MessageToDict(common.metadata))

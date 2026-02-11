@@ -87,10 +87,9 @@ class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
     ]
 
     with self.assertRaises(grpc.RpcError) as context:
-      async for _ in self.test_client.stub.CallTool(
+      await self.test_client.stub.CallTool(
           request, metadata=unsupported_version_metadata
-      ):
-        pass
+      )
 
     rpc_error = context.exception
     self.assertEqual(rpc_error.code(), grpc.StatusCode.UNIMPLEMENTED)
@@ -151,8 +150,7 @@ class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
     )
 
     with self.assertRaises(grpc.RpcError) as context:
-      async for _ in self.test_client.stub.CallTool(request):
-        pass
+      await self.test_client.stub.CallTool(request)
 
     rpc_error = context.exception
     self.assertEqual(rpc_error.code(), grpc.StatusCode.UNIMPLEMENTED)

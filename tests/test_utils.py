@@ -1,25 +1,26 @@
 """Utility functions and classes for testing."""
 
-import anyio
 import asyncio
 import base64
-import grpc
-import socket
 from contextlib import closing
+import socket
 from typing import Any
 
+import anyio
+import grpc
+from mcp import types as mcp_types
 from mcp.server import fastmcp
 from mcp_grpc_transport.server import grpc_server as grpc_server_lib
-from mcp_grpc_transport_proto import mcp_pb2_grpc
-from mcp import types as mcp_types
 from mcp_grpc_transport.utils import version_utils
-
 from pydantic import AnyUrl
+
+from mcp_grpc_transport_proto import mcp_pb2_grpc
+
 
 def find_free_port():
   """Finds a free port."""
   with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-    s.bind(('localhost', 0))
+    s.bind(("localhost", 0))
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     return s.getsockname()[1]
 
@@ -41,11 +42,11 @@ class TestServerWithTools:
     - test_image_output: Used for testing image content response.
     - test_audio_output: Used for testing audio content response.
     - test_resource_output: Used for testing resource link response.
-    - test_embedded_resource_text_output: Used for testing response of an 
+    - test_embedded_resource_text_output: Used for testing response of an
         embedded resource with text content.
-    - test_embedded_resource_blob_output: Used for testing response of an 
+    - test_embedded_resource_blob_output: Used for testing response of an
         embedded resource with blob content.
-    - test_combination_output: Used for testing response of a combination of 
+    - test_combination_output: Used for testing response of a combination of
         unstructured content.
     - test_structured_output: Used for testing response of a structured output.
     - invalidTool: Raises an exception.
@@ -58,12 +59,10 @@ class TestServerWithTools:
   def __init__(self):
     # Create a FastMCP Server instance
     self.mcp_server = fastmcp.FastMCP("TestServer")
-    self.version_metadata = [
-        (
-            version_utils.MCP_PROTOCOL_VERSION_KEY,
-            mcp_types.LATEST_PROTOCOL_VERSION,
-        )
-    ]
+    self.version_metadata = [(
+        version_utils.MCP_PROTOCOL_VERSION_KEY,
+        mcp_types.LATEST_PROTOCOL_VERSION,
+    )]
 
     # Register tools
     @self.mcp_server.tool(name="add")
@@ -76,36 +75,14 @@ class TestServerWithTools:
       """Echo back a message."""
       return "Hello " + message
 
-    @self.mcp_server.tool(name="download_file")
-    async def download_file(
-        filename: str, size_mb: float, ctx: fastmcp.Context
-    ) -> str:
-      """Simulate downloading a file with progress updates."""
-      total_bytes = int(size_mb * 1024 * 1024)
-      chunk_size = 64 * 1024
-      downloaded = 0
-
-      while downloaded < total_bytes:
-        await asyncio.sleep(0.01)  # Faster for tests
-
-        downloaded += chunk_size
-        if downloaded > total_bytes:
-          downloaded = total_bytes
-
-        progress = downloaded / total_bytes
-
-        await ctx.report_progress(
-            progress, 1.0, f"Downloaded {downloaded} bytes"
-        )
-
-      return f"Successfully downloaded {filename}"
-
     @self.mcp_server.tool(name="tool_with_image_output")
     def tool_with_image_output() -> mcp_types.ImageContent:
       """Test tool that returns an image."""
       image_data = base64.b64encode(b"fake image data").decode()
       return mcp_types.ImageContent(
-          type="image", data=image_data, mimeType="image/png",
+          type="image",
+          data=image_data,
+          mimeType="image/png",
       )
 
     @self.mcp_server.tool(name="tool_with_audio_output")
@@ -113,7 +90,9 @@ class TestServerWithTools:
       """Test tool that returns an image."""
       audio_data = base64.b64encode(b"fake audio data").decode()
       return mcp_types.AudioContent(
-          type="audio", data=audio_data, mimeType="audio/wav",
+          type="audio",
+          data=audio_data,
+          mimeType="audio/wav",
       )
 
     @self.mcp_server.tool(name="tool_with_resource_output")

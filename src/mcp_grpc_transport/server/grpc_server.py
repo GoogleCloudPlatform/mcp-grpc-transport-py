@@ -3,7 +3,6 @@
 This module provides a gRPC transport for MCP servers.
 """
 
-import asyncio
 from concurrent.futures import Executor
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -53,73 +52,57 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
   def __init__(self, fastmcp_server: "FastMCP"):
     self.fastmcp_server: "FastMCP" = fastmcp_server
 
-  async def _call_tool_executor(
+  async def CallTool(
       self,
-      req: mcp_pb2.CallToolRequest,
-      sess: "mcp_grpc_transport_server.GRPCSession",
-  ) -> None:
-    """Helper function to execute a tool call.
+      request: mcp_pb2.CallToolRequest,
+      context: grpc.aio.ServicerContext,
+  ):
+    # Verify the protocol version from the metadata and abort the RPC if it is
+    # not supported, while sending the initial metadata with the server's
+    # supported latest version.
+    await version_utils.verify_protocol_version_from_metadata(context)
 
-    This function assumes the gRPC specific context has already been set and
-    calls the `call_tool` method of the FastMCP server object. The final
-    response from the tool is converted to a CallToolResult object if needed
-    and then added in the response queue associated with the session object.
+    # Run mcp.call_tool under the gRPC request context.
+    with grpc_request_context(request) as (_, _):
+      try:
+        # Validate the CallToolRequest before calling the tool.
+        convert_types.validate_call_tool_request_proto(request)
 
-    Args:
-        req: The CallToolRequest from the client.
-        sess: The GRPCSession to use for the response.
-    """
+        call_tool_params = convert_types.get_call_tool_params_from_proto(
+            request
+        )
 
-    # Validate the CallToolRequest before calling the tool.
-    try:
-      convert_types.validate_call_tool_request_proto(req)
-    except ValueError as e:
-      queue_item = convert_types.tool_error_to_call_tool_result(
-          ToolError(str(e))
-      )
-      logger.error("Invalid CallToolRequest: %s", e)
-      await sess.response_queue.put(queue_item)
-      await sess.response_queue.put(None)
-      return
+        response = await self.fastmcp_server.call_tool(
+            call_tool_params.name, call_tool_params.arguments
+        )
 
-    try:
-      call_tool_params = convert_types.get_call_tool_params_from_proto(req)
+        # The result object from FastMCP.call_tool to convert, can be either of -
+        #   - a mcp_types.CallToolResult object.
+        #   or other types for backward compatibility like:
+        #   - unstructured content (Sequence[mcp_types.ContentBlock]),
+        #   - structured content (dict[str, Any]),
+        #   - a tuple of both the above.
+        #
+        # Hence unify and convert it into a standard CallToolResult object,
+        # for easier conversion to proto response.
+        call_tool_result = convert_types.unify_call_tool_result(response)
 
-      response = await self.fastmcp_server.call_tool(
-          call_tool_params.name, call_tool_params.arguments
-      )
+        return convert_types.call_tool_result_to_proto(call_tool_result)
 
-      # The result object from FastMCP.call_tool to convert, can be either of -
-      #   - a mcp_types.CallToolResult object.
+      except ToolError as e:
+        logger.error("Error during tool call: %s", e, exc_info=True)
+        return convert_types.call_tool_result_to_proto(
+            convert_types.tool_error_to_call_tool_result(e)
+        )
 
-      #   or other types for backward compatibility like:
-      #   - unstructured content (Sequence[mcp_types.ContentBlock]),
-      #   - structured content (dict[str, Any]),
-      #   - a tuple of both the above.
-      #
-      # Hence unify and convert it into a standard CallToolResult object,
-      # for easier conversion to proto response.
-      call_tool_result = convert_types.unify_call_tool_result(
-          response
-      )
-
-      await sess.response_queue.put(call_tool_result)
-
-    except ToolError as e:
-      logger.error("Error during tool call: %s", e, exc_info=True)
-      queue_item = convert_types.tool_error_to_call_tool_result(e)
-      await sess.response_queue.put(queue_item)
-
-    except Exception as e:  # pylint: disable=broad-except
-      logger.error("Error during tool call: %s", e, exc_info=True)
-      queue_item = convert_types.tool_error_to_call_tool_result(
-          ToolError(f"Error during tool call: {e}")
-      )
-
-      await sess.response_queue.put(queue_item)
-
-    finally:
-      await sess.response_queue.put(None)
+      except Exception as e:  # pylint: disable=broad-except
+        logger.error("Error during tool call: %s", e, exc_info=True)
+        # For other exceptions, we also return a CallToolResponse with is_error=True
+        return convert_types.call_tool_result_to_proto(
+            convert_types.tool_error_to_call_tool_result(
+                ToolError(f"Error during tool call: {e}")
+            )
+        )
 
   async def ListTools(
       self,
@@ -145,46 +128,6 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
       logger.exception(error_message)
       await context.abort(grpc.StatusCode.INTERNAL, error_message)
 
-  async def CallTool(
-      self,
-      request: mcp_pb2.CallToolRequest,
-      context: grpc.aio.ServicerContext,
-  ):
-    # Verify the protocol version from the metadata and abort the RPC if it is
-    # not supported, while sending the initial metadata with the server's
-    # supported latest version.
-    await version_utils.verify_protocol_version_from_metadata(context)
-
-    # Run mcp.call_tool under the gRPC request context.
-    with grpc_request_context(request) as (_, session):
-      response_queue = session.response_queue
-
-      # Create an asyncio task for the helper function.
-      tool_task = asyncio.create_task(
-          self._call_tool_executor(request, session)
-      )
-
-      try:
-        while True:
-          queue_item = await response_queue.get()
-          if queue_item is None:
-            break
-
-          response_proto = convert_types.session_queue_item_to_proto(queue_item)
-          yield response_proto
-
-      except asyncio.CancelledError:
-        logger.info("CallTool stream cancelled by client.")
-
-      finally:
-        if not tool_task.done():
-          tool_task.cancel()
-
-          try:
-            await tool_task  # Await the task to ensure cancellation finishes
-          except asyncio.CancelledError:
-            logger.info("CallTool task successfully cancelled.")
-
 
 @contextmanager
 def grpc_request_context(
@@ -192,11 +135,7 @@ def grpc_request_context(
 ):
   """Sets RequestContext for the duration of a gRPC request."""
 
-  response_queue: asyncio.Queue[grpc_session.ServerResponseMessageType] = (
-      asyncio.Queue()
-  )
-
-  session = mcp_grpc_transport_server.GRPCSession(response_queue)
+  session = mcp_grpc_transport_server.GRPCSession()
 
   grpc_req_ctx = mcp_grpc_transport_server.GRPCRequestContext.from_grpc(
       request=request,

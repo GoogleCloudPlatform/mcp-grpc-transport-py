@@ -234,28 +234,6 @@ def call_tool_result_to_proto(
   return call_tool_response
 
 
-def session_queue_item_to_proto(
-    item: grpc_session.ServerResponseMessageType,
-) -> mcp_pb2.CallToolResponse | None:
-  """Converts the session queue item to a CallToolResponse Proto message."""
-
-  if isinstance(item, mcp_types.CallToolResult):
-    return call_tool_result_to_proto(item)
-
-  if isinstance(item, mcp_types.ProgressNotification):
-    params = item.params
-    progress_proto = mcp_pb2.ProgressNotification(
-        progress_token=str(params.progressToken),
-        progress=params.progress,
-        total=params.total,
-        message=params.message if params.message is not None else "",
-    )
-
-    return mcp_pb2.CallToolResponse(
-        common=mcp_pb2.ResponseFields(progress=progress_proto)
-    )
-
-
 def tool_error_to_call_tool_result(
     error: ToolError,
 ) -> mcp_types.CallToolResult:

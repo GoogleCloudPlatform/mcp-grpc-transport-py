@@ -34,11 +34,10 @@ class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
     tools_in_response = response.tools
 
     with self.subTest(name="VerifyAllAddedTools"):
-      self.assertEqual(len(tools_in_response), 11)
+      self.assertEqual(len(tools_in_response), 10)
       tool_names = [t.name for t in tools_in_response]
       self.assertIn("add", tool_names)
       self.assertIn("echo", tool_names)
-      self.assertIn("download_file", tool_names)
 
     add_tool: mcp_pb2.Tool = next(
         t for t in tools_in_response if t.name == "add"
