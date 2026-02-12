@@ -8,7 +8,7 @@ from mcp.shared.context import RequestContext, SessionT
 import mcp.types as mcp_types
 
 if TYPE_CHECKING:
-  from mcp_grpc_transport_proto import mcp_messages_pb2
+  from mcp_grpc_transport_proto import mcp_pb2
 
 
 class GRPCRequestContext(RequestContext[SessionT, Any, Any], Generic[SessionT]):
@@ -23,9 +23,7 @@ class GRPCRequestContext(RequestContext[SessionT, Any, Any], Generic[SessionT]):
     """Create a RequestContext from a gRPC request."""
 
     # Extract common fields if present
-    common: mcp_messages_pb2.RequestFields | None = getattr(
-        request, "common", None
-    )
+    common: mcp_pb2.RequestFields | None = getattr(request, "common", None)
     meta_dict: dict[str, Any] = {}
 
     if common is not None:

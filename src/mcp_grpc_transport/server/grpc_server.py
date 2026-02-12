@@ -18,7 +18,7 @@ from mcp_grpc_transport.server import grpc_session
 from mcp_grpc_transport.utils import convert_types
 from mcp_grpc_transport.utils import version_utils
 
-from mcp_grpc_transport_proto import mcp_messages_pb2
+from mcp_grpc_transport_proto import mcp_pb2
 from mcp_grpc_transport_proto import mcp_pb2_grpc
 
 
@@ -54,7 +54,7 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
 
   async def CallTool(
       self,
-      request: mcp_messages_pb2.CallToolRequest,
+      request: mcp_pb2.CallToolRequest,
       context: grpc.aio.ServicerContext,
   ):
     # Verify the protocol version from the metadata and abort the RPC if it is
@@ -106,7 +106,7 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
 
   async def ListTools(
       self,
-      request: mcp_messages_pb2.ListToolsRequest,
+      request: mcp_pb2.ListToolsRequest,
       context: grpc.aio.ServicerContext,
   ):
     # Verify the protocol version from the metadata and abort the RPC if it is
@@ -121,12 +121,13 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
 
       proto_tools = [convert_types.tool_to_proto(tool) for tool in tools]
 
-      return mcp_messages_pb2.ListToolsResponse(tools=proto_tools)
+      return mcp_pb2.ListToolsResponse(tools=proto_tools)
 
     except Exception as e:  # pylint: disable=broad-except
       error_message = f"Error during ListTools call. {e}"
       logger.exception(error_message)
       await context.abort(grpc.StatusCode.INTERNAL, error_message)
+
 
 @contextmanager
 def grpc_request_context(

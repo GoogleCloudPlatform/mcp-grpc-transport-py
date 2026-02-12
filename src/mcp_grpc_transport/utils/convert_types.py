@@ -10,14 +10,14 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp_grpc_transport.server import grpc_session
 
 from google.protobuf import struct_pb2
-from mcp_grpc_transport_proto import mcp_messages_pb2
+from mcp_grpc_transport_proto import mcp_pb2
 
 logger = logging.getLogger(__name__)
 
 ###################### ListTools helper functions ##########################
 
 
-def tool_to_proto(tool: mcp_types.Tool) -> mcp_messages_pb2.Tool:
+def tool_to_proto(tool: mcp_types.Tool) -> mcp_pb2.Tool:
   """Converts a MCP Tool type to a Protobuf Tool message.
 
   Args:
@@ -44,7 +44,7 @@ def tool_to_proto(tool: mcp_types.Tool) -> mcp_messages_pb2.Tool:
     logger.error("Failed to parse outputSchema for tool %s: %s", tool.name, e)
     raise
 
-  return mcp_messages_pb2.Tool(
+  return mcp_pb2.Tool(
       name=tool.name,
       title=tool.title,
       description=tool.description,
@@ -59,7 +59,7 @@ def tool_to_proto(tool: mcp_types.Tool) -> mcp_messages_pb2.Tool:
 
 
 def get_call_tool_params_from_proto(
-    request: mcp_messages_pb2.CallToolRequest,
+    request: mcp_pb2.CallToolRequest,
 ) -> mcp_types.CallToolRequestParams:
   """Extracts CallToolRequestParams from a CallToolRequest proto message.
 
@@ -81,7 +81,7 @@ def get_call_tool_params_from_proto(
 
 
 def validate_call_tool_request_proto(
-    request: mcp_messages_pb2.CallToolRequest,
+    request: mcp_pb2.CallToolRequest,
 ) -> None:
   """Validates the CallToolRequest proto message.
 
@@ -109,7 +109,7 @@ def validate_call_tool_request_proto(
 
 def _content_block_to_proto(
     content_block: mcp_types.ContentBlock,
-) -> mcp_messages_pb2.CallToolResponse.Content | None:
+) -> mcp_pb2.CallToolResponse.Content | None:
   """Converts a MCP type ContentBlock to a CallToolResponse.Content Proto message.
 
   Args:
@@ -121,21 +121,21 @@ def _content_block_to_proto(
   """
 
   if isinstance(content_block, mcp_types.TextContent):
-    return mcp_messages_pb2.CallToolResponse.Content(
-        text=mcp_messages_pb2.TextContent(text=content_block.text)
+    return mcp_pb2.CallToolResponse.Content(
+        text=mcp_pb2.TextContent(text=content_block.text)
     )
 
   elif isinstance(content_block, mcp_types.ImageContent):
-    return mcp_messages_pb2.CallToolResponse.Content(
-        image=mcp_messages_pb2.ImageContent(
+    return mcp_pb2.CallToolResponse.Content(
+        image=mcp_pb2.ImageContent(
             data=base64.b64decode(content_block.data),
             mime_type=content_block.mimeType,
         )
     )
 
   elif isinstance(content_block, mcp_types.AudioContent):
-    return mcp_messages_pb2.CallToolResponse.Content(
-        audio=mcp_messages_pb2.AudioContent(
+    return mcp_pb2.CallToolResponse.Content(
+        audio=mcp_pb2.AudioContent(
             data=base64.b64decode(content_block.data),
             mime_type=content_block.mimeType,
         )
@@ -144,7 +144,7 @@ def _content_block_to_proto(
   elif isinstance(content_block, mcp_types.EmbeddedResource):
     resource_contents = content_block.resource
 
-    embedded_resource_contents = mcp_messages_pb2.ResourceContents(
+    embedded_resource_contents = mcp_pb2.ResourceContents(
         uri=str(resource_contents.uri),
         mime_type=resource_contents.mimeType or "",
     )
@@ -155,8 +155,8 @@ def _content_block_to_proto(
           resource_contents.blob
       )
 
-    result = mcp_messages_pb2.CallToolResponse.Content(
-        embedded_resource=mcp_messages_pb2.EmbeddedResource(
+    result = mcp_pb2.CallToolResponse.Content(
+        embedded_resource=mcp_pb2.EmbeddedResource(
             contents=embedded_resource_contents
         )
     )
@@ -164,8 +164,8 @@ def _content_block_to_proto(
     return result
 
   elif isinstance(content_block, mcp_types.ResourceLink):  # type: ignore
-    return mcp_messages_pb2.CallToolResponse.Content(
-        resource_link=mcp_messages_pb2.Resource(
+    return mcp_pb2.CallToolResponse.Content(
+        resource_link=mcp_pb2.Resource(
             uri=str(content_block.uri),
             name=content_block.name or "",
             title=content_block.title or "",
@@ -177,7 +177,7 @@ def _content_block_to_proto(
 
 def _unstructured_tool_content_to_proto(
     tool_output: Sequence[mcp_types.ContentBlock],
-) -> list[mcp_messages_pb2.CallToolResponse.Content]:
+) -> list[mcp_pb2.CallToolResponse.Content]:
   """Converts unstructured tool output to a list of CallToolResponse.Content protos.
 
   Args:
@@ -191,7 +191,7 @@ def _unstructured_tool_content_to_proto(
   if not tool_output:
     return []
 
-  contents: list[mcp_messages_pb2.CallToolResponse.Content] = []
+  contents: list[mcp_pb2.CallToolResponse.Content] = []
   for tool in tool_output:
     content_item = _content_block_to_proto(tool)
     if content_item is not None:
@@ -205,7 +205,7 @@ def _unstructured_tool_content_to_proto(
 
 def call_tool_result_to_proto(
     result: mcp_types.CallToolResult,
-) -> mcp_messages_pb2.CallToolResponse:
+) -> mcp_pb2.CallToolResponse:
   """Converts the mcp_types.CallToolResult object to a CallToolResponse Proto message.
 
   Args:
@@ -215,8 +215,8 @@ def call_tool_result_to_proto(
       The converted CallToolResponse Protobuf message.
   """
 
-  call_tool_response = mcp_messages_pb2.CallToolResponse(
-      common=mcp_messages_pb2.ResponseFields(),
+  call_tool_response = mcp_pb2.CallToolResponse(
+      common=mcp_pb2.ResponseFields(),
       is_error=result.isError,
   )
 

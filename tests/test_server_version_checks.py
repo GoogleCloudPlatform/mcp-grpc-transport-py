@@ -9,7 +9,7 @@ from mcp_grpc_transport.utils import version_utils
 
 from google.protobuf import struct_pb2
 from google3.testing.pybase import googletest
-from mcp_grpc_transport_proto import mcp_messages_pb2
+from mcp_grpc_transport_proto import mcp_pb2
 
 
 class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
@@ -43,7 +43,7 @@ class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
         (version_utils.MCP_PROTOCOL_VERSION_KEY, "2025-06-20"),
     ]
 
-    request = mcp_messages_pb2.ListToolsRequest()
+    request = mcp_pb2.ListToolsRequest()
 
     with self.assertRaises(grpc.RpcError) as context:
       await self.test_client.stub.ListTools(
@@ -77,10 +77,8 @@ class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
     args = struct_pb2.Struct()
     args.update({"message": "World"})
 
-    request = mcp_messages_pb2.CallToolRequest(
-        request=mcp_messages_pb2.CallToolRequest.Request(
-            name="echo", arguments=args
-        )
+    request = mcp_pb2.CallToolRequest(
+        request=mcp_pb2.CallToolRequest.Request(name="echo", arguments=args)
     )
 
     # Use a random date to test the unsupported version.
@@ -116,7 +114,7 @@ class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
     2. The response metadata is expected to contain the latest protocol version.
     3. The error details are expected to contain the list of supported versions.
     """
-    request = mcp_messages_pb2.ListToolsRequest()
+    request = mcp_pb2.ListToolsRequest()
     with self.assertRaises(grpc.RpcError) as context:
       await self.test_client.stub.ListTools(request)
 
@@ -147,10 +145,8 @@ class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
     args = struct_pb2.Struct()
     args.update({"message": "World"})
 
-    request = mcp_messages_pb2.CallToolRequest(
-        request=mcp_messages_pb2.CallToolRequest.Request(
-            name="echo", arguments=args
-        )
+    request = mcp_pb2.CallToolRequest(
+        request=mcp_pb2.CallToolRequest.Request(name="echo", arguments=args)
     )
 
     with self.assertRaises(grpc.RpcError) as context:
