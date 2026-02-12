@@ -7,7 +7,7 @@ from tests import test_utils
 from mcp_grpc_transport.utils import convert_types
 
 from google3.testing.pybase import googletest
-from mcp_grpc_transport_proto import mcp_pb2
+from mcp_grpc_transport_proto import mcp_messages_pb2
 
 class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
   """Tests the ListTools RPCs of the MCP gRPC server."""
@@ -27,7 +27,7 @@ class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
   async def test_list_tools_success(self):
     """Tests the ListTools RPC."""
 
-    request = mcp_pb2.ListToolsRequest()
+    request = mcp_messages_pb2.ListToolsRequest()
     response = await self.test_client.stub.ListTools(
         request, metadata=self.test_server.version_metadata
     )
@@ -39,7 +39,7 @@ class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
       self.assertIn("add", tool_names)
       self.assertIn("echo", tool_names)
 
-    add_tool: mcp_pb2.Tool = next(
+    add_tool: mcp_messages_pb2.Tool = next(
         t for t in tools_in_response if t.name == "add"
     )
 
@@ -70,7 +70,7 @@ class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
         side_effect=json_format.ParseError("Invalid schema"),
         autospec=True,
     ):
-      request = mcp_pb2.ListToolsRequest()
+      request = mcp_messages_pb2.ListToolsRequest()
       with self.assertRaises(grpc.RpcError) as context:
         await self.test_client.stub.ListTools(
             request, metadata=self.test_server.version_metadata

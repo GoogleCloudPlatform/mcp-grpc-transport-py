@@ -6,7 +6,7 @@ from tests import test_utils
 
 from google.protobuf import struct_pb2
 from google3.testing.pybase import googletest
-from mcp_grpc_transport_proto import mcp_pb2
+from mcp_grpc_transport_proto import mcp_messages_pb2
 
 
 class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
@@ -30,7 +30,7 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
       tool_name: str,
       args: struct_pb2.Struct,
       metadata: list[tuple[str, str]] | None = None,
-  ) -> mcp_pb2.CallToolResponse:
+  ) -> mcp_messages_pb2.CallToolResponse:
     """Makes a tool call and returns the response.
 
     Args:
@@ -45,8 +45,8 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     if metadata is None:
       metadata = self.test_server.version_metadata
 
-    request = mcp_pb2.CallToolRequest(
-        request=mcp_pb2.CallToolRequest.Request(name=tool_name, arguments=args)
+    request = mcp_messages_pb2.CallToolRequest(
+        request=mcp_messages_pb2.CallToolRequest.Request(name=tool_name, arguments=args)
     )
 
     return await self.test_client.stub.CallTool(request, metadata=metadata)
@@ -171,9 +171,9 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     args = struct_pb2.Struct()
     args.update({"filename": "test.txt", "size_mb": 1})
 
-    request = mcp_pb2.CallToolRequest(
-        common=mcp_pb2.RequestFields(),
-        request=mcp_pb2.CallToolRequest.Request(
+    request = mcp_messages_pb2.CallToolRequest(
+        common=mcp_messages_pb2.RequestFields(),
+        request=mcp_messages_pb2.CallToolRequest.Request(
             name="download_file", arguments=args
         ),
     )
@@ -194,7 +194,7 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     args.update({"message": "World"})
 
     response = await self._make_tool_call("", args)
-    self.assertIsInstance(response, mcp_pb2.CallToolResponse)
+    self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
 
     self.assertTrue(response.is_error)
 
@@ -214,7 +214,7 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     args = struct_pb2.Struct()
     tool_name = "echo"
     response = await self._make_tool_call(tool_name, args)
-    self.assertIsInstance(response, mcp_pb2.CallToolResponse)
+    self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
 
     self.assertTrue(response.is_error)
 
@@ -238,7 +238,7 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     """Tests the CallTool RPC with a tool that raises an exception."""
     args = struct_pb2.Struct()
     response = await self._make_tool_call("invalidTool", args)
-    self.assertIsInstance(response, mcp_pb2.CallToolResponse)
+    self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
 
     self.assertTrue(response.is_error)
 
@@ -260,7 +260,7 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     tool_name = "tool_with_wrong_output"
 
     response = await self._make_tool_call(tool_name, args)
-    self.assertIsInstance(response, mcp_pb2.CallToolResponse)
+    self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
 
     self.assertTrue(response.is_error)
 
