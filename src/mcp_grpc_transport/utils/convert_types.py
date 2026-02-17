@@ -1,13 +1,11 @@
 """Utility functions to convert between MCP and Protobuf types."""
 
-import base64
 import logging
 from typing import Any, Sequence
 
 from google.protobuf import json_format
 from mcp import types as mcp_types
 from mcp.server.fastmcp.exceptions import ToolError
-from mcp_grpc_transport.server import grpc_session
 
 from google.protobuf import struct_pb2
 from mcp_grpc_transport_proto import mcp_messages_pb2
@@ -58,7 +56,7 @@ def tool_to_proto(tool: mcp_types.Tool) -> mcp_messages_pb2.Tool:
 ################### CallTool request helper functions ######################
 
 
-def get_call_tool_params_from_proto(
+def call_tool_params_from_proto(
     request: mcp_messages_pb2.CallToolRequest,
 ) -> mcp_types.CallToolRequestParams:
   """Extracts CallToolRequestParams from a CallToolRequest proto message.
@@ -126,17 +124,19 @@ def _content_block_to_proto(
     )
 
   elif isinstance(content_block, mcp_types.ImageContent):
+    # keep the base64-encoded data as is and just convert to bytes
     return mcp_messages_pb2.CallToolResponse.Content(
         image=mcp_messages_pb2.ImageContent(
-            data=base64.b64decode(content_block.data),
+            data=content_block.data.encode(),
             mime_type=content_block.mimeType,
         )
     )
 
   elif isinstance(content_block, mcp_types.AudioContent):
+    # keep the base64-encoded data as is and just convert to bytes
     return mcp_messages_pb2.CallToolResponse.Content(
         audio=mcp_messages_pb2.AudioContent(
-            data=base64.b64decode(content_block.data),
+            data=content_block.data.encode(),
             mime_type=content_block.mimeType,
         )
     )
@@ -144,16 +144,20 @@ def _content_block_to_proto(
   elif isinstance(content_block, mcp_types.EmbeddedResource):
     resource_contents = content_block.resource
 
+    if isinstance(resource_contents, mcp_types.TextResourceContents):
+      text, blob = resource_contents.text, b""
+    elif isinstance(resource_contents, mcp_types.BlobResourceContents):
+      # keep the base64-encoded data as is and just convert to bytes
+      text, blob = "", resource_contents.blob.encode()
+    else:
+      text, blob = "", b""
+
     embedded_resource_contents = mcp_messages_pb2.ResourceContents(
         uri=str(resource_contents.uri),
         mime_type=resource_contents.mimeType or "",
+        text=text,
+        blob=blob,
     )
-    if isinstance(resource_contents, mcp_types.TextResourceContents):
-      embedded_resource_contents.text = resource_contents.text
-    elif isinstance(resource_contents, mcp_types.BlobResourceContents):
-      embedded_resource_contents.blob = base64.b64decode(
-          resource_contents.blob
-      )
 
     result = mcp_messages_pb2.CallToolResponse.Content(
         embedded_resource=mcp_messages_pb2.EmbeddedResource(

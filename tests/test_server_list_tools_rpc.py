@@ -9,6 +9,7 @@ from mcp_grpc_transport.utils import convert_types
 from google3.testing.pybase import googletest
 from mcp_grpc_transport_proto import mcp_messages_pb2
 
+
 class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
   """Tests the ListTools RPCs of the MCP gRPC server."""
 
@@ -16,7 +17,7 @@ class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
     self.test_server = test_utils.TestServerWithTools()
     await self.test_server.start_grpc_server()
 
-    self.test_client = test_utils.TestServerClient(
+    self.test_client = test_utils.FakeTestClient(
         self.test_server.port
     )
 
@@ -34,7 +35,7 @@ class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
     tools_in_response = response.tools
 
     with self.subTest(name="VerifyAllAddedTools"):
-      self.assertEqual(len(tools_in_response), 10)
+      self.assertEqual(len(tools_in_response), self.test_server.num_tools)
       tool_names = [t.name for t in tools_in_response]
       self.assertIn("add", tool_names)
       self.assertIn("echo", tool_names)

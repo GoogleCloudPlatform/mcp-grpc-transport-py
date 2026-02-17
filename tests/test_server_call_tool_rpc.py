@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import unittest
 
 from mcp_grpc_transport.server import grpc_server
@@ -17,7 +18,7 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
 
     await self.test_server.start_grpc_server()
 
-    self.test_client = test_utils.TestServerClient(
+    self.test_client = test_utils.FakeTestClient(
         self.test_server.port
     )
 
@@ -92,10 +93,13 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     response = await self._make_tool_call("tool_with_image_output", args)
 
     self.assertEqual(len(response.content), 1)
-    self.assertTrue(response.content[0].HasField("image"))
 
-    self.assertEqual(response.content[0].image.mime_type, "image/png")
-    self.assertEqual(response.content[0].image.data, b"fake image data")
+    content = response.content[0]
+    self.assertTrue(content.HasField("image"))
+
+    with self.subTest(name="VerifyImageContent"):
+      self.assertEqual(content.image.mime_type, "image/png")
+      self.assertEqual(base64.b64decode(content.image.data), b"fake image data")
 
   async def test_call_tool_with_audio_output(self):
     """Tests the CallTool RPC with audio output."""
@@ -103,10 +107,13 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     response = await self._make_tool_call("tool_with_audio_output", args)
 
     self.assertEqual(len(response.content), 1)
-    self.assertTrue(response.content[0].HasField("audio"))
 
-    self.assertEqual(response.content[0].audio.mime_type, "audio/wav")
-    self.assertEqual(response.content[0].audio.data, b"fake audio data")
+    content = response.content[0]
+    self.assertTrue(content.HasField("audio"))
+
+    with self.subTest(name="VerifyAudioContent"):
+      self.assertEqual(content.audio.mime_type, "audio/wav")
+      self.assertEqual(base64.b64decode(content.audio.data), b"fake audio data")
 
   async def test_call_tool_with_resource_output(self):
     """Tests the CallTool RPC with resource output."""
@@ -152,7 +159,7 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
 
     contents = response.content[0].embedded_resource.contents
     self.assertEqual(contents.uri, "https://www.google.com/")
-    self.assertEqual(contents.blob, b"blob content")
+    self.assertEqual(base64.b64decode(contents.blob), b"blob content")
     self.assertEqual(contents.mime_type, "application/octet-stream")
 
   async def test_call_tool_with_structured_output(self):

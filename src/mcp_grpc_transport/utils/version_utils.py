@@ -11,7 +11,8 @@ from mcp.shared import version
 MCP_PROTOCOL_VERSION_KEY = "mcp-protocol-version"
 MCP_TOOL_NAME_KEY = "mcp-tool-name"
 MCP_RESOURCE_URI_KEY = "mcp-resource-uri"
-
+LATEST_PROTOCOL_VERSION = version.LATEST_PROTOCOL_VERSION
+SUPPORTED_PROTOCOL_VERSIONS = version.SUPPORTED_PROTOCOL_VERSIONS
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -52,7 +53,7 @@ async def _get_protocol_version_from_context(
   """
 
   metadata = context.invocation_metadata()
-  protocol_version_str = _get_metadata_value(metadata, MCP_PROTOCOL_VERSION_KEY)
+  protocol_version_str = get_metadata_value(metadata, MCP_PROTOCOL_VERSION_KEY)
 
   # Success case: If the protocol version is provided and supported, return it.
   if (
@@ -65,7 +66,8 @@ async def _get_protocol_version_from_context(
   # send the initial metadata with the supported latest version and
   # abort the RPC with an appropriate error message.
 
-  if protocol_version_str is None:
+  # Fail in case of both None and empty string
+  if not protocol_version_str:
     abort_msg = "Protocol version not provided."
   else:
     abort_msg = "Unsupported protocol version."
@@ -82,14 +84,25 @@ async def _get_protocol_version_from_context(
   )
 
 
-def _get_metadata_value(
-    metadata: grpc.aio.Metadata | None, key: str
+def get_metadata_value(
+    metadata: (aio.Metadata | Sequence[tuple[str, str | bytes]]) | None,
+    key: str,
 ) -> str | None:
-  """Extracts a value from gRPC metadata by key."""
-  if metadata:
-    for k, value in metadata:
-      if k.lower() == key.lower():
-        if isinstance(value, bytes):
-          return value.decode("utf-8")
-        return value
+  """Extracts a value from gRPC metadata by key.
+
+  Args:
+      metadata: The gRPC metadata.
+      key: The key of the metadata to extract.
+
+  Returns:
+      The value of the metadata if found, otherwise None.
+  """
+  if not metadata:
+    return None
+
+  lower_key = key.lower()
+  for k, v in metadata:
+    if k.lower() == lower_key:
+      return v.decode("utf-8") if isinstance(v, bytes) else v
+
   return None

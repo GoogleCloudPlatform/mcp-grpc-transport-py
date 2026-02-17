@@ -19,7 +19,7 @@ class TestRPCVersionChecks(unittest.IsolatedAsyncioTestCase):
     self.test_server = test_utils.TestServerWithTools()
     await self.test_server.start_grpc_server()
 
-    self.test_client = test_utils.TestServerClient(
+    self.test_client = test_utils.FakeTestClient(
         self.test_server.port
     )
 

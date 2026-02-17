@@ -14,7 +14,6 @@ from grpc import aio
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.lowlevel import server as mcp_server
 import mcp_grpc_transport.server as mcp_grpc_transport_server
-from mcp_grpc_transport.server import grpc_session
 from mcp_grpc_transport.utils import convert_types
 from mcp_grpc_transport.utils import version_utils
 
@@ -68,7 +67,7 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
         # Validate the CallToolRequest before calling the tool.
         convert_types.validate_call_tool_request_proto(request)
 
-        call_tool_params = convert_types.get_call_tool_params_from_proto(
+        call_tool_params = convert_types.call_tool_params_from_proto(
             request
         )
 
@@ -97,10 +96,10 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
 
       except Exception as e:  # pylint: disable=broad-except
         logger.error("Error during tool call: %s", e, exc_info=True)
-        # For other exceptions, we also return a CallToolResponse with is_error=True
+        # For other exceptions, return a CallToolResponse with is_error=True
         return convert_types.call_tool_result_to_proto(
             convert_types.tool_error_to_call_tool_result(
-                ToolError(f"Error during tool call: {e}")
+                ToolError(f"Error during tool call: {e!r}")
             )
         )
 
@@ -124,14 +123,14 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
       return mcp_messages_pb2.ListToolsResponse(tools=proto_tools)
 
     except Exception as e:  # pylint: disable=broad-except
-      error_message = f"Error during ListTools call. {e}"
-      logger.exception(error_message)
-      await context.abort(grpc.StatusCode.INTERNAL, error_message)
+      logger.exception("Error during ListTools call. %r", e)
+      await context.abort(
+          grpc.StatusCode.INTERNAL, f"Error during ListTools call. {e!r}"
+      )
+
 
 @contextmanager
-def grpc_request_context(
-    request: Any,
-):
+def grpc_request_context(request: Any):
   """Sets RequestContext for the duration of a gRPC request."""
 
   session = mcp_grpc_transport_server.GRPCSession()

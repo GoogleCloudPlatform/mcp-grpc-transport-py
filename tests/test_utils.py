@@ -1,20 +1,18 @@
 """Utility functions and classes for testing."""
 
-import asyncio
 import base64
-from contextlib import closing
+import grpc
 import socket
+from contextlib import closing
 from typing import Any
 
 import anyio
-import grpc
 from mcp import types as mcp_types
 from mcp.server import fastmcp
 from mcp_grpc_transport.server import grpc_server as grpc_server_lib
+from mcp_grpc_transport_proto import mcp_pb2_grpc
 from mcp_grpc_transport.utils import version_utils
 from pydantic import AnyUrl
-
-from mcp_grpc_transport_proto import mcp_pb2_grpc
 
 
 def find_free_port():
@@ -39,16 +37,15 @@ class TestServerWithTools:
     - add: Adds two numbers.
     - echo: Echoes back a message.
     - download_file: Simulates downloading a file with progress updates.
-    - test_image_output: Used for testing image content response.
-    - test_audio_output: Used for testing audio content response.
-    - test_resource_output: Used for testing resource link response.
-    - test_embedded_resource_text_output: Used for testing response of an
+    - tool_with_image_output: Used for testing image content response.
+    - tool_with_audio_output: Used for testing audio content response.
+    - tool_with_resource_output: Used for testing resource link response.
+    - tool_with_embedded_resource_text_output: Used for testing response of an
         embedded resource with text content.
-    - test_embedded_resource_blob_output: Used for testing response of an
+    - tool_with_embedded_resource_blob_output: Used for testing response of an
         embedded resource with blob content.
-    - test_combination_output: Used for testing response of a combination of
-        unstructured content.
-    - test_structured_output: Used for testing response of a structured output.
+    - tool_with_structured_output: Used for testing response of a structured
+        dict output.
     - invalidTool: Raises an exception.
     - tool_with_wrong_output: Used for testing response of a value that does
         not match the output schema.
@@ -145,6 +142,11 @@ class TestServerWithTools:
       """This tool intentionally returns a value that does not match the output schema."""
       return 123
 
+    # Number of tools registered with the server.
+    # This is used to verify the ListTools RPC response.
+    # TODO(developer): Update this if you add/remove tools above.
+    self.num_tools = 10
+
     # Create the servicer
     self.port = None
     self.grpc_server = None
@@ -156,8 +158,8 @@ class TestServerWithTools:
     )
 
 
-class TestServerClient:
-  """A test client used to connect to the test server and send RPCs."""
+class FakeTestClient:
+  """A fake test client used to connect to the test server and send RPCs."""
 
   def __init__(self, port: int):
     self.channel = grpc.aio.insecure_channel(f"localhost:{port}")
