@@ -4,15 +4,127 @@ import logging
 from typing import Any, Sequence
 
 from google.protobuf import json_format
+import grpc
 from mcp import types as mcp_types
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.shared import exceptions as mcp_exceptions
 
 from google.protobuf import struct_pb2
 from mcp_grpc_transport_proto import mcp_messages_pb2
 
 logger = logging.getLogger(__name__)
 
+
+def convert_grpc_error_to_mcp_error(
+    grpc_error: grpc.aio.AioRpcError,
+    error_msg_prefix: str,
+) -> mcp_exceptions.McpError:
+  """Converts a gRPC error to a MCP error."""
+
+  if grpc_error.code() is grpc.StatusCode.INVALID_ARGUMENT:
+    details = grpc_error.details()
+    grpc_error_details = details.lower() if details is not None else ""
+
+    if "parse error" in grpc_error_details:
+      mcp_error_code = mcp_types.PARSE_ERROR
+    elif "invalid request" in grpc_error_details:
+      mcp_error_code = mcp_types.INVALID_REQUEST
+    elif "invalid param" in grpc_error_details:
+      mcp_error_code = mcp_types.INVALID_PARAMS
+    else:
+      mcp_error_code = mcp_types.INTERNAL_ERROR
+
+  elif grpc_error.code() is grpc.StatusCode.UNIMPLEMENTED:
+    mcp_error_code = mcp_types.METHOD_NOT_FOUND
+
+  else:
+    mcp_error_code = mcp_types.INTERNAL_ERROR
+
+  return mcp_exceptions.McpError(
+      mcp_types.ErrorData(
+          code=mcp_error_code,
+          message=f"{error_msg_prefix}: {grpc_error!r}",
+      )
+  )
+
+
+def convert_exception_to_mcp_error(
+    error: Exception,
+    error_msg_prefix: str,
+) -> mcp_exceptions.McpError:
+  """Converts an exception to its corresponding MCP error."""
+
+  if isinstance(error, grpc.aio.AioRpcError):
+    return convert_grpc_error_to_mcp_error(error, error_msg_prefix)
+
+  if isinstance(error, mcp_exceptions.McpError):
+    return error
+
+  if isinstance(error, json_format.ParseError):
+    mcp_error_code = mcp_types.PARSE_ERROR
+
+  else:
+    mcp_error_code = mcp_types.INTERNAL_ERROR
+
+  return mcp_exceptions.McpError(
+      mcp_types.ErrorData(
+          code=mcp_error_code,
+          message=f"{error_msg_prefix}: {error!r}",
+      )
+  )
+
 ###################### ListTools helper functions ##########################
+
+
+def list_tools_result_from_proto(
+    list_tools_response_proto: mcp_messages_pb2.ListToolsResponse,
+) -> mcp_types.ListToolsResult:
+  """Converts a Protobuf ListToolsResponse message to a MCP ListToolsResult type.
+
+  Args:
+      list_tools_response_proto: The Protobuf ListToolsResponse message to
+        convert from.
+
+  Returns:
+      The converted MCP ListToolsResult type.
+  """
+  tools = [tool_from_proto(tool) for tool in list_tools_response_proto.tools]
+
+  return mcp_types.ListToolsResult(
+      tools=tools,
+  )
+
+
+def tool_from_proto(tool: mcp_messages_pb2.Tool) -> mcp_types.Tool:
+  """Converts a Protobuf Tool message to a MCP Tool type.
+
+  Args:
+      tool: The Protobuf Tool message to convert.
+
+  Returns:
+      The converted MCP Tool object.
+  """
+  try:
+    input_schema = json_format.MessageToDict(tool.input_schema)
+  except json_format.ParseError as e:
+    logger.error("Failed to parse input_schema for tool %s: %s", tool.name, e)
+    raise
+
+  try:
+    output_schema = None
+    if tool.HasField("output_schema"):
+      output_schema = json_format.MessageToDict(tool.output_schema)
+  except json_format.ParseError as e:
+    logger.error("Failed to parse output_schema for tool %s: %s", tool.name, e)
+    raise
+
+  return mcp_types.Tool(
+      name=tool.name,
+      title=tool.title,
+      description=tool.description,
+      inputSchema=input_schema,
+      outputSchema=output_schema,
+  )
 
 
 def tool_to_proto(tool: mcp_types.Tool) -> mcp_messages_pb2.Tool:
@@ -78,6 +190,32 @@ def call_tool_params_from_proto(
   )
 
 
+def call_tool_params_to_proto(
+    call_tool_params: mcp_types.CallToolRequestParams,
+) -> mcp_messages_pb2.CallToolRequest:
+  """Converts a CallToolRequestParams object to a CallToolRequest proto message.
+
+  Args:
+      call_tool_params: The CallToolRequestParams object to convert.
+
+  Returns:
+      The converted CallToolRequest proto message.
+  """
+
+  arguments = (
+      json_format.ParseDict(call_tool_params.arguments, struct_pb2.Struct())
+      if call_tool_params.arguments is not None
+      else struct_pb2.Struct()
+  )
+
+  return mcp_messages_pb2.CallToolRequest(
+      request=mcp_messages_pb2.CallToolRequest.Request(
+          name=call_tool_params.name,
+          arguments=arguments,
+      ),
+  )
+
+
 def validate_call_tool_request_proto(
     request: mcp_messages_pb2.CallToolRequest,
 ) -> None:
@@ -105,6 +243,82 @@ def validate_call_tool_request_proto(
 ################### CallTool response helper functions ####################
 
 
+def _content_block_from_proto(
+    content_proto: mcp_messages_pb2.CallToolResponse.Content,
+) -> mcp_types.ContentBlock | None:
+  """Converts a CallToolResponse.Content Proto message to a MCP type ContentBlock.
+
+  The CallToolResponse.Content Proto message can be one of the following:
+  TextContent | ImageContent | AudioContent | Resource | EmbeddedResource
+
+  It is converted to one of the following MCP type ContentBlocks respectively:
+  TextContent | ImageContent | AudioContent | ResourceLink | EmbeddedResource
+
+  Args:
+      content_proto: The CallToolResponse.Content Proto message to convert.
+
+  Returns:
+      The converted MCP type ContentBlock object or None if the
+      content proto is not valid.
+  """
+
+  if content_proto.HasField("text"):
+    return mcp_types.TextContent(
+        type="text",
+        text=content_proto.text.text,
+    )
+
+  if content_proto.HasField("image"):
+    # keep the base64-encoding of the data as is and just convert to string
+    return mcp_types.ImageContent(
+        type="image",
+        data=content_proto.image.data.decode(),
+        mimeType=content_proto.image.mime_type,
+    )
+
+  if content_proto.HasField("audio"):
+    # keep the base64-encoding of the data as is and just convert to string
+    return mcp_types.AudioContent(
+        type="audio",
+        data=content_proto.audio.data.decode(),
+        mimeType=content_proto.audio.mime_type,
+    )
+
+  if content_proto.HasField("embedded_resource"):
+    resource = content_proto.embedded_resource.contents
+    if resource.text:
+      resource_contents = mcp_types.TextResourceContents(
+          uri=resource.uri,
+          mimeType=resource.mime_type,
+          text=resource.text,
+      )
+    else:
+      # keep the base64-encoding of the blob as is and just convert to string
+      resource_contents = mcp_types.BlobResourceContents(
+          uri=resource.uri,
+          mimeType=resource.mime_type,
+          blob=resource.blob.decode(),
+      )
+    return mcp_types.EmbeddedResource(
+        type="resource",
+        resource=resource_contents,
+    )
+
+  if content_proto.HasField("resource_link"):
+    resource = content_proto.resource_link
+    return mcp_types.ResourceLink(
+        type="resource_link",
+        uri=resource.uri,
+        name=resource.name,
+        title=resource.title,
+        description=resource.description,
+        mimeType=resource.mime_type,
+        size=resource.size,
+    )
+
+  return None
+
+
 def _content_block_to_proto(
     content_block: mcp_types.ContentBlock,
 ) -> mcp_messages_pb2.CallToolResponse.Content | None:
@@ -124,7 +338,8 @@ def _content_block_to_proto(
     )
 
   elif isinstance(content_block, mcp_types.ImageContent):
-    # keep the base64-encoded data as is and just convert to bytes
+    # keep the base64-encoding of the received data as is,
+    # and just convert to bytes
     return mcp_messages_pb2.CallToolResponse.Content(
         image=mcp_messages_pb2.ImageContent(
             data=content_block.data.encode(),
@@ -133,7 +348,8 @@ def _content_block_to_proto(
     )
 
   elif isinstance(content_block, mcp_types.AudioContent):
-    # keep the base64-encoded data as is and just convert to bytes
+    # keep the base64-encoding of the received data as is,
+    # and just convert to bytes
     return mcp_messages_pb2.CallToolResponse.Content(
         audio=mcp_messages_pb2.AudioContent(
             data=content_block.data.encode(),
@@ -147,7 +363,8 @@ def _content_block_to_proto(
     if isinstance(resource_contents, mcp_types.TextResourceContents):
       text, blob = resource_contents.text, b""
     elif isinstance(resource_contents, mcp_types.BlobResourceContents):
-      # keep the base64-encoded data as is and just convert to bytes
+      # keep the base64-encoding of the received blob as is,
+      # and just convert to bytes
       text, blob = "", resource_contents.blob.encode()
     else:
       text, blob = "", b""
@@ -178,6 +395,34 @@ def _content_block_to_proto(
         )
     )
 
+  return None
+
+
+def _unstructured_tool_content_from_proto(
+    response_contents: Sequence[mcp_messages_pb2.CallToolResponse.Content],
+) -> list[mcp_types.ContentBlock]:
+  """Converts a list of CallToolResponse.Content protos to a list of ContentBlock objects.
+
+  Args:
+      response_contents: The list of CallToolResponse.Content protos to convert.
+
+  Returns:
+      A list of ContentBlock objects.
+  """
+
+  if not response_contents:
+    return []
+
+  contents: list[mcp_types.ContentBlock] = []
+  for content_proto in response_contents:
+    content_item = _content_block_from_proto(content_proto)
+    if content_item is not None:
+      contents.append(content_item)
+    else:
+      logger.error("Found an invalid content proto: %s", content_proto)
+
+  return contents
+
 
 def _unstructured_tool_content_to_proto(
     tool_output: Sequence[mcp_types.ContentBlock],
@@ -196,15 +441,43 @@ def _unstructured_tool_content_to_proto(
     return []
 
   contents: list[mcp_messages_pb2.CallToolResponse.Content] = []
-  for tool in tool_output:
-    content_item = _content_block_to_proto(tool)
+  for content_block in tool_output:
+    content_item = _content_block_to_proto(content_block)
     if content_item is not None:
       contents.append(content_item)
     else:
-      logger.error("Item is not a valid content block: %s", tool)
-      return []
+      logger.error("Item is not a valid content block: %s", content_block)
 
   return contents
+
+
+def call_tool_result_from_proto(
+    response: mcp_messages_pb2.CallToolResponse,
+) -> mcp_types.CallToolResult:
+  """Converts a CallToolResponse proto message to a CallToolResult object.
+
+  Args:
+      response: The CallToolResponse proto message to convert from.
+
+  Returns:
+      The converted CallToolResult object.
+  """
+
+  contents = _unstructured_tool_content_from_proto(
+      response.content
+  )
+  call_tool_result = mcp_types.CallToolResult(
+      isError=response.is_error,
+      content=contents,
+  )
+
+  if response.HasField("structured_content"):
+    structured_content = json_format.MessageToDict(
+        response.structured_content
+    )
+    call_tool_result.structuredContent = structured_content
+
+  return call_tool_result
 
 
 def call_tool_result_to_proto(

@@ -1,6 +1,7 @@
 """Utility functions and classes for testing."""
 
 import base64
+from google.protobuf import json_format
 import grpc
 import socket
 from contextlib import closing
@@ -10,7 +11,10 @@ import anyio
 from mcp import types as mcp_types
 from mcp.server import fastmcp
 from mcp_grpc_transport.server import grpc_server as grpc_server_lib
+from google.protobuf import struct_pb2
+from mcp_grpc_transport_proto import mcp_messages_pb2
 from mcp_grpc_transport_proto import mcp_pb2_grpc
+from mcp_grpc_transport.utils import convert_types
 from mcp_grpc_transport.utils import version_utils
 from pydantic import AnyUrl
 
@@ -52,6 +56,7 @@ class TestServerWithTools:
 
   The last 2 tools are used for testing error handling for CallTool RPC.
   """
+  __test__ = False  # Tells pytest this is not a test class
 
   def __init__(self):
     # Create a FastMCP Server instance
@@ -156,6 +161,94 @@ class TestServerWithTools:
     self.grpc_server = await grpc_server_lib.create_mcp_grpc_server(
         self.mcp_server, f"localhost:{self.port}"
     )
+
+
+class FakeServicer(mcp_pb2_grpc.McpServicer):
+  """A fake test servicer that implements the McpServicer interface and returns dummy responses for RPCs to test the mcp grpc client."""
+
+  async def CallTool(self, request, context):
+    await version_utils.verify_protocol_version_from_metadata(context)
+    return mcp_messages_pb2.CallToolResponse(
+        content=[],
+        structured_content=json_format.ParseDict(
+            {"test": "test"}, struct_pb2.Struct()
+        )
+    )
+
+  async def ListTools(self, request, context):
+    await version_utils.verify_protocol_version_from_metadata(context)
+    dummy_tool = mcp_messages_pb2.Tool(
+        name="test_tool",
+        title="Test Tool",
+        description="Test Tool",
+        input_schema=json_format.ParseDict(
+            {
+                "type": "object",
+                "properties": {"test": {"type": "string"}},
+            },
+            struct_pb2.Struct(),
+        ),
+    )
+
+    return mcp_messages_pb2.ListToolsResponse(
+        tools=[dummy_tool]
+    )
+
+
+class FakeErrorServicer(mcp_pb2_grpc.McpServicer):
+  """A fake test servicer that implements the McpServicer interface and returns errors for RPCs to test error handling in the mcp grpc client."""
+
+  async def CallTool(self, request, context):
+    call_tool_params = convert_types.call_tool_params_from_proto(
+        request
+    )
+    arguments = call_tool_params.arguments
+    if arguments.get("send_error", "false") == "true":
+      error_content = mcp_messages_pb2.CallToolResponse.Content(
+          text=mcp_messages_pb2.TextContent(
+              text="Fake error response from CallTool",
+          ),
+      )
+      return mcp_messages_pb2.CallToolResponse(
+          content=[error_content],
+          is_error=True,
+      )
+
+    await context.abort(grpc.StatusCode.INTERNAL, "Fake error during CallTool")
+
+  async def ListTools(self, request, context):
+    await context.abort(grpc.StatusCode.INTERNAL, "Fake error during ListTools")
+
+
+class FakeTestServer:
+  """A fake test server that implements a fake McpServicer interface and returns dummy responses for RPCs to test the mcp grpc client."""
+
+  def __init__(self, test_for_error: bool = False):
+    self.test_for_error = test_for_error
+    self.port = find_free_port()
+    self.grpc_server = None
+
+  async def start_grpc_server(self):
+    """Starts the gRPC server on a free port.
+
+    If test_for_error is True, the server will return errors for all RPCs.
+    Otherwise, it will return dummy responses.
+    """
+    self.port = find_free_port()
+    self.grpc_server = grpc.aio.server()
+
+    if self.test_for_error:
+      mcp_pb2_grpc.add_McpServicer_to_server(
+          FakeErrorServicer(), self.grpc_server
+      )
+    else:
+      mcp_pb2_grpc.add_McpServicer_to_server(FakeServicer(), self.grpc_server)
+
+    self.grpc_server.add_insecure_port(f"localhost:{self.port}")
+    await self.grpc_server.start()
+
+  async def stop(self):
+    await self.grpc_server.stop(1)
 
 
 class FakeTestClient:
