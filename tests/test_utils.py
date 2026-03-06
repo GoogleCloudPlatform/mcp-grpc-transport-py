@@ -1,10 +1,12 @@
 """Utility functions and classes for testing."""
 
 import base64
+from collections.abc import Sequence
 from google.protobuf import json_format
 import grpc
 import socket
 from contextlib import closing
+import pathlib
 from typing import Any
 
 import anyio
@@ -12,6 +14,7 @@ from mcp import types as mcp_types
 from mcp.server import fastmcp
 from mcp_grpc_transport.server import grpc_server as grpc_server_lib
 from google.protobuf import struct_pb2
+from google3.pyglib import resources
 from mcp_grpc_transport_proto import mcp_messages_pb2
 from mcp_grpc_transport_proto import mcp_pb2_grpc
 from mcp_grpc_transport.utils import convert_types
@@ -163,6 +166,89 @@ class TestServerWithTools:
     )
 
 
+class TestServerWithResources:
+  """A test server with resources used for testing RPCs related to resources."""
+
+  __test__ = False  # Tells pytest this is not a test class
+
+  def __init__(self):
+    # Create a FastMCP Server instance
+    self.mcp_server = fastmcp.FastMCP("TestServer")
+    self.version_metadata = [(
+        version_utils.MCP_PROTOCOL_VERSION_KEY,
+        mcp_types.LATEST_PROTOCOL_VERSION,
+    )]
+
+    self.test_resources_dir = pathlib.Path(
+        "google3/third_party/py/mcp_grpc_transport/tests/test_resources"
+    )
+
+    # Register resources
+    @self.mcp_server.resource("test://data")
+    def test_resource() -> str:
+      """A test resource."""
+      return "resource data"
+
+    @self.mcp_server.resource(
+        "test://binary_resource", mime_type="application/octet-stream",
+    )
+    def binary_resource() -> bytes:
+      """A binary resource."""
+      return b"binary data"
+
+    @self.mcp_server.resource("test://empty_resource", mime_type="text/plain")
+    def empty_resource() -> str:
+      """An empty resource."""
+      return ""
+
+    @self.mcp_server.resource("test://template/{name}", mime_type="text/plain")
+    def template_resource(name: str) -> str:
+      """A template resource."""
+      return f"Hello, {name}!"
+
+    @self.mcp_server.resource(
+        "test://file/text_file_resource", mime_type="text/plain",
+    )
+    def text_file_resource() -> str:
+      """A text file resource."""
+      file_path = self.test_resources_dir / "helloworld.txt"
+      content = resources.GetResource(str(file_path), mode="r")
+      return content
+
+    @self.mcp_server.resource(
+        "test://file/binary_file_resource", mime_type="image/gif",
+    )
+    def binary_file_resource() -> bytes:
+      """A binary file resource."""
+      file_path = self.test_resources_dir / "test_image.gif"
+      content = resources.GetResource(str(file_path), mode="rb")
+      return content
+
+    @self.mcp_server.resource(
+        "test://large_text_resource", mime_type="text/plain",
+    )
+    def large_text_resource() -> str:
+      """A large text resource of size 5MB."""
+      return "a" * (5 * 1024 * 1024)
+
+    # Number of resources registered with the server.
+    # This is used to verify the ListResources and ListResourceTemplates RPC
+    # responses.
+    # TODO: Update this if you add/remove resources above.
+    self.num_resources = 6
+    self.num_resource_templates = 1
+
+    # Create the servicer
+    self.port = None
+    self.grpc_server = None
+
+  async def start_grpc_server(self):
+    self.port = find_free_port()
+    self.grpc_server = await grpc_server_lib.create_mcp_grpc_server(
+        self.mcp_server, f"localhost:{self.port}"
+    )
+
+
 class FakeServicer(mcp_pb2_grpc.McpServicer):
   """A fake test servicer that implements the McpServicer interface and returns dummy responses for RPCs to test the mcp grpc client."""
 
@@ -254,6 +340,10 @@ class FakeTestServer:
 class FakeTestClient:
   """A fake test client used to connect to the test server and send RPCs."""
 
-  def __init__(self, port: int):
-    self.channel = grpc.aio.insecure_channel(f"localhost:{port}")
+  def __init__(
+      self, port: int, options: Sequence[tuple[str, Any]] | None = None
+  ):
+    self.channel = grpc.aio.insecure_channel(
+        f"localhost:{port}", options=options
+    )
     self.stub = mcp_pb2_grpc.McpStub(self.channel)

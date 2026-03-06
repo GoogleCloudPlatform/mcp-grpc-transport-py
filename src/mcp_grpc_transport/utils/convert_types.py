@@ -6,8 +6,10 @@ from typing import Any, Sequence
 from google.protobuf import json_format
 import grpc
 from mcp import types as mcp_types
+from mcp.server.lowlevel import helper_types as mcp_helper_types
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.shared import exceptions as mcp_exceptions
+import pydantic
 
 from google.protobuf import struct_pb2
 from mcp_grpc_transport_proto import mcp_messages_pb2
@@ -72,6 +74,106 @@ def convert_exception_to_mcp_error(
           message=f"{error_msg_prefix}: {error!r}",
       )
   )
+
+###################### ListResources helper functions ##########################
+
+
+def resource_to_proto(
+    resource: mcp_types.Resource
+) -> mcp_messages_pb2.Resource:
+  """Converts a MCP Resource type to a Protobuf Resource message.
+
+  Args:
+      resource: The MCP Resource type to convert.
+
+  Returns:
+      The converted Protobuf Resource message.
+  """
+  return mcp_messages_pb2.Resource(
+      uri=str(resource.uri),
+      name=resource.name,
+      title=resource.title,
+      description=resource.description,
+      mime_type=resource.mimeType or "",
+      size=resource.size or 0,
+  )
+
+
+################### End of ListResources helper functions ######################
+
+################## ListResourceTemplates helper functions ######################
+
+
+def resource_template_to_proto(
+    resource_template: mcp_types.ResourceTemplate
+) -> mcp_messages_pb2.ResourceTemplate:
+  """Converts a MCP ResourceTemplate type to Protobuf ResourceTemplate message.
+
+  Args:
+      resource_template: The MCP ResourceTemplate type to convert.
+
+  Returns:
+      The converted Protobuf ResourceTemplate message.
+  """
+  return mcp_messages_pb2.ResourceTemplate(
+      uri_template=str(resource_template.uriTemplate),
+      name=resource_template.name,
+      title=resource_template.title,
+      description=resource_template.description,
+      mime_type=resource_template.mimeType,
+  )
+
+
+################ End of ListResourceTemplates helper functions #################
+
+###################### ReadResource helper functions ###########################
+
+
+def read_resource_request_params_from_proto(
+    request: mcp_messages_pb2.ReadResourceRequest,
+) -> mcp_types.ReadResourceRequestParams:
+  """Converts ReadResourceRequest proto to a ReadResourceRequestParams object.
+
+  Args:
+      request: The ReadResourceRequest proto message to convert.
+
+  Returns:
+      The converted ReadResourceRequestParams object.
+  """
+
+  return mcp_types.ReadResourceRequestParams(
+      uri=pydantic.AnyUrl(request.uri),
+  )
+
+
+def resource_contents_to_proto(
+    uri: pydantic.AnyUrl,
+    resource_contents: mcp_helper_types.ReadResourceContents
+) -> mcp_messages_pb2.ResourceContents:
+  """Converts a MCP ReadResourceContents type to ResourceContents proto message.
+
+  Args:
+      uri: The URI of the resource.
+      resource_contents: The MCP ResourceContents type to convert.
+
+  Returns:
+      The converted Protobuf ResourceContents message.
+  """
+  contents = resource_contents.content
+
+  text, blob = (
+      ("", contents) if isinstance(contents, bytes) else (contents, b"")
+  )
+
+  return mcp_messages_pb2.ResourceContents(
+      uri=str(uri),
+      mime_type=resource_contents.mime_type or "",
+      text=text,
+      blob=blob,
+  )
+
+
+#################### End of ReadResource helper functions ######################
 
 ###################### ListTools helper functions ##########################
 

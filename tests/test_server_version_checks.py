@@ -38,6 +38,21 @@ class TestRPCVersionChecks(
           rpc_name="CallTool",
           request=mcp_messages_pb2.CallToolRequest(),
       ),
+      dict(
+          testcase_name="_ListResources",
+          rpc_name="ListResources",
+          request=mcp_messages_pb2.ListResourcesRequest(),
+      ),
+      dict(
+          testcase_name="_ListResourceTemplates",
+          rpc_name="ListResourceTemplates",
+          request=mcp_messages_pb2.ListResourceTemplatesRequest(),
+      ),
+      dict(
+          testcase_name="_ReadResource",
+          rpc_name="ReadResource",
+          request=mcp_messages_pb2.ReadResourceRequest(),
+      ),
   )
   async def test_rpcs_unsupported_version(self, rpc_name, request):
     """Tests the different RPCs fail with unsupported version metadata.
@@ -91,6 +106,21 @@ class TestRPCVersionChecks(
           testcase_name="_CallTool",
           rpc_name="CallTool",
           request=mcp_messages_pb2.CallToolRequest(),
+      ),
+      dict(
+          testcase_name="_ListResources",
+          rpc_name="ListResources",
+          request=mcp_messages_pb2.ListResourcesRequest(),
+      ),
+      dict(
+          testcase_name="_ListResourceTemplates",
+          rpc_name="ListResourceTemplates",
+          request=mcp_messages_pb2.ListResourceTemplatesRequest(),
+      ),
+      dict(
+          testcase_name="_ReadResource",
+          rpc_name="ReadResource",
+          request=mcp_messages_pb2.ReadResourceRequest(),
       ),
   )
   async def test_rpcs_missing_version(self, rpc_name, request):

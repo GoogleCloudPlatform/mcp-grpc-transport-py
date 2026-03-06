@@ -128,6 +128,109 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
           grpc.StatusCode.INTERNAL, f"Error during ListTools call. {e!r}"
       )
 
+  async def ListResources(
+      self,
+      request: mcp_messages_pb2.ListResourcesRequest,
+      context: grpc.aio.ServicerContext,
+  ):
+
+    # Verify the protocol version from the metadata and abort the RPC if it is
+    # not supported, while sending the initial metadata with the server's
+    # supported latest version.
+    await version_utils.verify_protocol_version_from_metadata(context)
+
+    try:
+      # Run mcp.list_resources under the gRPC request context.
+      with grpc_request_context(request):
+        resources = await self.fastmcp_server.list_resources()
+
+        return mcp_messages_pb2.ListResourcesResponse(resources=[
+            convert_types.resource_to_proto(resource) for resource in resources
+        ])
+
+    except Exception as e:  # pylint: disable=broad-except
+      logger.exception("Error during ListResources call.")
+      await context.abort(
+          grpc.StatusCode.INTERNAL, f"Error during ListResources call. {e!r}"
+      )
+
+  async def ListResourceTemplates(
+      self,
+      request: mcp_messages_pb2.ListResourceTemplatesRequest,
+      context: grpc.aio.ServicerContext,
+  ):
+    # Verify the protocol version from the metadata and abort the RPC if it is
+    # not supported, while sending the initial metadata with the server's
+    # supported latest version.
+    await version_utils.verify_protocol_version_from_metadata(context)
+
+    try:
+      # Run mcp.list_resource_templates under the gRPC request context.
+      with grpc_request_context(request):
+        resource_templates = await self.fastmcp_server.list_resource_templates()
+
+        return mcp_messages_pb2.ListResourceTemplatesResponse(
+            resource_templates=[
+                convert_types.resource_template_to_proto(resource_template)
+                for resource_template in resource_templates
+            ]
+        )
+
+    except Exception as e:  # pylint: disable=broad-except
+      logger.exception("Error during ListResourceTemplates call.")
+      await context.abort(
+          grpc.StatusCode.INTERNAL,
+          f"Error during ListResourceTemplates call. {e!r}"
+      )
+
+  async def ReadResource(
+      self,
+      request: mcp_messages_pb2.ReadResourceRequest,
+      context: grpc.aio.ServicerContext,
+  ):
+    """Read a resource.
+
+    The size of the resource is limited by the max_receive_message_length
+    channel option of gRPC client, which is 4MB by default in OSS gRPC Python.
+    This can be increased by setting the channel option:
+    ("grpc.max_receive_message_length", <size_in_bytes>).
+
+    Args:
+        request: The ReadResourceRequest proto to send to the RPC.
+        context: The gRPC servicer context.
+
+    Returns:
+        The ReadResourceResponse proto.
+    """
+    # Verify the protocol version from the metadata and abort the RPC if it is
+    # not supported, while sending the initial metadata with the server's
+    # supported latest version.
+    await version_utils.verify_protocol_version_from_metadata(context)
+
+    try:
+      # Run mcp.read_resource under the gRPC request context.
+      with grpc_request_context(request):
+        params = convert_types.read_resource_request_params_from_proto(request)
+        contents = await self.fastmcp_server.read_resource(params.uri)
+        return mcp_messages_pb2.ReadResourceResponse(
+            resource=[
+                convert_types.resource_contents_to_proto(params.uri, content)
+                for content in contents
+            ]
+        )
+
+    except ValueError as e:
+      logger.exception("Error during ReadResource call.")
+      await context.abort(
+          grpc.StatusCode.NOT_FOUND, f"Error during ReadResource call. {e!r}"
+      )
+
+    except Exception as e:  # pylint: disable=broad-except
+      logger.exception("Error during ReadResource call.")
+      await context.abort(
+          grpc.StatusCode.INTERNAL, f"Error during ReadResource call. {e!r}"
+      )
+
 
 @contextmanager
 def grpc_request_context(request: Any):
