@@ -6,9 +6,12 @@ import mcp_grpc_transport.client as mcp_grpc_client
 from tests import test_utils
 
 from google3.testing.pybase import googletest
+from google3.testing.pybase import parameterized
 
 
-class TestClientVersionNegotiation(unittest.IsolatedAsyncioTestCase):
+class TestClientVersionNegotiation(
+    parameterized.TestCase, unittest.IsolatedAsyncioTestCase
+):
   """Tests the version negotiation logic of the MCP gRPC client."""
 
   async def asyncSetUp(self):
@@ -23,63 +26,92 @@ class TestClientVersionNegotiation(unittest.IsolatedAsyncioTestCase):
     await self.client_session.close()
     await self.test_server.stop()
 
-  async def test_list_tools_version_negotiation_success(self):
-    """Tests the version negotiation retry logic for the ListTools RPC."""
+  @parameterized.named_parameters(
+      dict(
+          version="2025-06-20",
+          testcase_name="_ListToolsUnsupportedVersion",
+          func_name="list_tools",
+          params={},
+          expected_response=mcp_types.ListToolsResult(
+              tools=[
+                  mcp_types.Tool(
+                      name="test_tool",
+                      title="Test Tool",
+                      description="Test Tool",
+                      inputSchema={
+                          "type": "object",
+                          "properties": {"test": {"type": "string"}},
+                      },
+                  )
+              ]
+          ),
+      ),
+      dict(
+          version="2025-06-20",
+          testcase_name="_CallToolUnsupportedVersion",
+          func_name="call_tool",
+          params={"name": "unused_tool_name"},
+          expected_response=mcp_types.CallToolResult(
+              content=[],
+              structuredContent={"test": "test"},
+              isError=False,
+          ),
+      ),
+      dict(
+          version="",
+          testcase_name="_ListToolsMissingVersion",
+          func_name="list_tools",
+          params={},
+          expected_response=mcp_types.ListToolsResult(
+              tools=[
+                  mcp_types.Tool(
+                      name="test_tool",
+                      title="Test Tool",
+                      description="Test Tool",
+                      inputSchema={
+                          "type": "object",
+                          "properties": {"test": {"type": "string"}},
+                      },
+                  )
+              ]
+          ),
+      ),
+      dict(
+          version="",
+          testcase_name="_CallToolMissingVersion",
+          func_name="call_tool",
+          params={"name": "unused_tool_name"},
+          expected_response=mcp_types.CallToolResult(
+              content=[],
+              structuredContent={"test": "test"},
+              isError=False,
+          ),
+      ),
+  )
+  async def test_version_negotiation_success(
+      self, *, version, func_name, params, expected_response
+  ):
+    """Tests the version negotiation retry logic for the different RPCs."""
 
     # As of Jan 2026, supported versions are:
     # ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
     # Inject a random date to test the unsupported version.
-    self.client_session.negotiated_version = "2025-06-20"
+    # or, inject an empty string to test the missing version.
+    self.client_session.negotiated_version = version
 
     try:
-      response = await self.client_session.list_tools()
+      func = getattr(self.client_session, func_name)
+      response = await func(**params)
     except mcp_exceptions.McpError as e:
       if e.error.code == mcp_types.METHOD_NOT_FOUND:
         self.fail(
-            "ListTools RPC unexpectedly failed with UNIMPLEMENTED status"
+            "RPC unexpectedly failed with UNIMPLEMENTED status"
             f" (equivalent to mcp_types.METHOD_NOT_FOUND) without retrying: {e}"
         )
       raise
 
     # Verify that the response received after retry is valid.
-    self.assertIsInstance(response, mcp_types.ListToolsResult)
-
-    tools_in_response = response.tools
-    self.assertEqual(len(tools_in_response), 1)
-
-    tool = tools_in_response[0]
-
-    with self.subTest(name="VerifyToolProperties"):
-      self.assertEqual(tool.name, "test_tool")
-      self.assertEqual(tool.title, "Test Tool")
-      self.assertEqual(tool.description, "Test Tool")
-      self.assertDictEqual(
-          tool.inputSchema,
-          {"type": "object", "properties": {"test": {"type": "string"}}},
-      )
-
-  async def test_call_tool_version_negotiation_success(self):
-    """Tests the version negotiation logic for the CallTool RPC."""
-
-    # As of Jan 2026, supported versions are:
-    # ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
-    # Inject a random date to test the unsupported version.
-    self.client_session.negotiated_version = "2025-06-20"
-
-    try:
-      response = await self.client_session.call_tool("unused_tool_name")
-    except mcp_exceptions.McpError as e:
-      if e.error.code == mcp_types.METHOD_NOT_FOUND:
-        self.fail(
-            f"CallTool RPC failed with UNIMPLEMENTED without retrying: {e}"
-        )
-      raise
-
-    # Verify that the response received after retry is valid.
-    self.assertIsInstance(response, mcp_types.CallToolResult)
-
-    self.assertDictEqual(response.structuredContent, {"test": "test"})
-    self.assertFalse(response.isError)
+    self.assertEqual(response, expected_response)
 
 if __name__ == "__main__":
   googletest.main()
