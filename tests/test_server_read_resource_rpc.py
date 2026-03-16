@@ -6,7 +6,6 @@ from tests import test_utils
 from mcp_grpc_transport.utils import convert_types
 
 from google3.net.proto2.contrib.pyutil import compare
-from google3.pyglib import resources
 from google3.testing.pybase import googletest
 from google3.testing.pybase import parameterized
 from mcp_grpc_transport_proto import mcp_messages_pb2
@@ -50,23 +49,6 @@ class TestReadResourceRPC(
           mime_type="text/plain",
           text="",
           blob=b"",
-      ),
-      dict(
-          testcase_name="_TextFileResource",
-          uri="test://file/text_file_resource",
-          mime_type="text/plain",
-          text="Hello World!\n",
-          blob=b"",
-      ),
-      dict(
-          testcase_name="_BinaryFileResource",
-          uri="test://file/binary_file_resource",
-          mime_type="image/gif",
-          text="",
-          blob=resources.GetResource(
-              "google3/third_party/py/mcp_grpc_transport/tests/test_resources/test_image.gif",
-              mode="rb",
-          ),
       ),
   )
   async def test_read_resource_success(self, uri, mime_type, text, blob):

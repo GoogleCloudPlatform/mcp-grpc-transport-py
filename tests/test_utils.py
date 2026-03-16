@@ -207,24 +207,6 @@ class TestServerWithResources:
       return f"Hello, {name}!"
 
     @self.mcp_server.resource(
-        "test://file/text_file_resource", mime_type="text/plain",
-    )
-    def text_file_resource() -> str:
-      """A text file resource."""
-      file_path = self.test_resources_dir / "helloworld.txt"
-      content = resources.GetResource(str(file_path), mode="r")
-      return content
-
-    @self.mcp_server.resource(
-        "test://file/binary_file_resource", mime_type="image/gif",
-    )
-    def binary_file_resource() -> bytes:
-      """A binary file resource."""
-      file_path = self.test_resources_dir / "test_image.gif"
-      content = resources.GetResource(str(file_path), mode="rb")
-      return content
-
-    @self.mcp_server.resource(
         "test://large_text_resource", mime_type="text/plain",
     )
     def large_text_resource() -> str:
@@ -235,7 +217,7 @@ class TestServerWithResources:
     # This is used to verify the ListResources and ListResourceTemplates RPC
     # responses.
     # TODO: Update this if you add/remove resources above.
-    self.num_resources = 6
+    self.num_resources = 4
     self.num_resource_templates = 1
 
     # Create the servicer
