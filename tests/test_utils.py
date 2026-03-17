@@ -14,7 +14,6 @@ from mcp import types as mcp_types
 from mcp.server import fastmcp
 from mcp_grpc_transport.server import grpc_server as grpc_server_lib
 from google.protobuf import struct_pb2
-from google3.pyglib import resources
 from mcp_grpc_transport_proto import mcp_messages_pb2
 from mcp_grpc_transport_proto import mcp_pb2_grpc
 from mcp_grpc_transport.utils import convert_types
@@ -232,7 +231,10 @@ class TestServerWithResources:
 
 
 class FakeServicer(mcp_pb2_grpc.McpServicer):
-  """A fake test servicer that implements the McpServicer interface and returns dummy responses for RPCs to test the mcp grpc client."""
+  """A fake test servicer that implements the McpServicer interface.
+
+  This servicer returns dummy responses for RPCs to test the mcp grpc client.
+  """
 
   async def CallTool(self, request, context):
     await version_utils.verify_protocol_version_from_metadata(context)
@@ -262,9 +264,62 @@ class FakeServicer(mcp_pb2_grpc.McpServicer):
         tools=[dummy_tool]
     )
 
+  async def ListResources(self, request, context):
+    await version_utils.verify_protocol_version_from_metadata(context)
+    dummy_resource = mcp_messages_pb2.Resource(
+        uri="test://data",
+        name="Test Resource",
+        title="Test Resource",
+        mime_type="text/plain",
+    )
+
+    return mcp_messages_pb2.ListResourcesResponse(
+        resources=[dummy_resource]
+    )
+
+  async def ListResourceTemplates(self, request, context):
+    await version_utils.verify_protocol_version_from_metadata(context)
+    dummy_resource_template = mcp_messages_pb2.ResourceTemplate(
+        uri_template="test://{name}",
+        name="Test Resource Template",
+        description="Test Resource Template",
+        mime_type="text/plain",
+    )
+
+    return mcp_messages_pb2.ListResourceTemplatesResponse(
+        resource_templates=[dummy_resource_template]
+    )
+
+  async def ReadResource(self, request, context):
+    await version_utils.verify_protocol_version_from_metadata(context)
+    uri = request.uri
+
+    # Overload the response based on the uri.
+    # If uri is test://data, send a dummy resource response.
+    # otherwise, send a dummy resource template response.
+    if uri == "test://data":
+      dummy_resource_contents = mcp_messages_pb2.ResourceContents(
+          uri="test://data",
+          text="resource data",
+          mime_type="text/plain",
+      )
+    else:
+      dummy_resource_contents = mcp_messages_pb2.ResourceContents(
+          uri=uri,
+          text="Hello World!",
+          mime_type="text/plain",
+      )
+
+    return mcp_messages_pb2.ReadResourceResponse(
+        resource=[dummy_resource_contents]
+    )
+
 
 class FakeErrorServicer(mcp_pb2_grpc.McpServicer):
-  """A fake test servicer that implements the McpServicer interface and returns errors for RPCs to test error handling in the mcp grpc client."""
+  """A fake servicer that implements McpServicer interface and returns errors.
+
+  Used to test error handling in the mcp grpc client.
+  """
 
   async def CallTool(self, request, context):
     call_tool_params = convert_types.call_tool_params_from_proto(
@@ -287,9 +342,32 @@ class FakeErrorServicer(mcp_pb2_grpc.McpServicer):
   async def ListTools(self, request, context):
     await context.abort(grpc.StatusCode.INTERNAL, "Fake error during ListTools")
 
+  async def ListResources(self, request, context):
+    await context.abort(
+        grpc.StatusCode.INTERNAL, "Fake error during ListResources"
+    )
+
+  async def ListResourceTemplates(self, request, context):
+    await context.abort(
+        grpc.StatusCode.INTERNAL, "Fake error during ListResourceTemplates"
+    )
+
+  async def ReadResource(self, request, context):
+    if request.uri == "test://unknown_resource":
+      await context.abort(
+          grpc.StatusCode.NOT_FOUND, "Resource not found"
+      )
+    else:
+      await context.abort(
+          grpc.StatusCode.INTERNAL, "Fake error during ReadResource"
+      )
+
 
 class FakeTestServer:
-  """A fake test server that implements a fake McpServicer interface and returns dummy responses for RPCs to test the mcp grpc client."""
+  """A fake test server that implements a fake McpServicer interface.
+
+  The server returns dummy responses for RPCs to test the mcp grpc client.
+  """
 
   def __init__(self, test_for_error: bool = False):
     self.test_for_error = test_for_error

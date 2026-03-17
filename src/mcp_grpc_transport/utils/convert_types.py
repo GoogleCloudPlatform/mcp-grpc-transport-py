@@ -39,6 +39,9 @@ def convert_grpc_error_to_mcp_error(
   elif grpc_error.code() is grpc.StatusCode.UNIMPLEMENTED:
     mcp_error_code = mcp_types.METHOD_NOT_FOUND
 
+  elif grpc_error.code() is grpc.StatusCode.NOT_FOUND:
+    mcp_error_code = mcp_types.INVALID_REQUEST
+
   else:
     mcp_error_code = mcp_types.INTERNAL_ERROR
 
@@ -78,6 +81,34 @@ def convert_exception_to_mcp_error(
 ###################### ListResources helper functions ##########################
 
 
+def list_resources_result_from_proto(
+    list_resources_response_proto: mcp_messages_pb2.ListResourcesResponse,
+) -> mcp_types.ListResourcesResult:
+  """Converts ListResourcesResponse proto to MCP ListResourcesResult object."""
+
+  return mcp_types.ListResourcesResult(
+      resources=[
+          resource_from_proto(resource)
+          for resource in list_resources_response_proto.resources
+      ]
+  )
+
+
+def resource_from_proto(
+    proto: mcp_messages_pb2.Resource,
+) -> mcp_types.Resource:
+  """Converts a Protobuf Resource message to a MCP Resource type."""
+
+  return mcp_types.Resource(
+      uri=pydantic.AnyUrl(proto.uri),
+      name=proto.name,
+      title=proto.title if proto.title else None,
+      description=proto.description if proto.description else None,
+      mimeType=proto.mime_type if proto.mime_type else None,
+      size=proto.size if proto.size != 0 else None,
+  )
+
+
 def resource_to_proto(
     resource: mcp_types.Resource
 ) -> mcp_messages_pb2.Resource:
@@ -94,14 +125,42 @@ def resource_to_proto(
       name=resource.name,
       title=resource.title,
       description=resource.description,
-      mime_type=resource.mimeType or "",
-      size=resource.size or 0,
+      mime_type=resource.mimeType,
+      size=resource.size,
   )
 
 
 ################### End of ListResources helper functions ######################
 
 ################## ListResourceTemplates helper functions ######################
+
+
+def list_resource_templates_result_from_proto(
+    list_res_templates_resp_proto: mcp_messages_pb2.ListResourceTemplatesResponse,
+) -> mcp_types.ListResourceTemplatesResult:
+  """Converts ListResourceTemplatesResponse proto to equivalent MCP object."""
+
+  return mcp_types.ListResourceTemplatesResult(
+      resourceTemplates=[
+          resource_template_from_proto(resource_template)
+          for resource_template in (
+              list_res_templates_resp_proto.resource_templates
+          )
+      ]
+  )
+
+
+def resource_template_from_proto(
+    proto: mcp_messages_pb2.ResourceTemplate,
+) -> mcp_types.ResourceTemplate:
+  """Converts a ResourceTemplate proto message to MCP ResourceTemplate type."""
+  return mcp_types.ResourceTemplate(
+      uriTemplate=proto.uri_template,
+      name=proto.name,
+      title=proto.title if proto.title else None,
+      description=proto.description if proto.description else None,
+      mimeType=proto.mime_type if proto.mime_type else None,
+  )
 
 
 def resource_template_to_proto(
@@ -143,6 +202,55 @@ def read_resource_request_params_from_proto(
 
   return mcp_types.ReadResourceRequestParams(
       uri=pydantic.AnyUrl(request.uri),
+  )
+
+
+def read_resource_request_params_to_proto(
+    request: mcp_types.ReadResourceRequestParams,
+) -> mcp_messages_pb2.ReadResourceRequest:
+  """Converts ReadResourceRequestParams object to ReadResourceRequest proto.
+
+  Args:
+      request: The ReadResourceRequestParams object to convert.
+
+  Returns:
+      The converted ReadResourceRequest proto message.
+  """
+
+  return mcp_messages_pb2.ReadResourceRequest(
+      uri=str(request.uri),
+  )
+
+
+def read_resource_result_from_proto(
+    response: mcp_messages_pb2.ReadResourceResponse,
+) -> mcp_types.ReadResourceResult:
+  """Converts ReadResourceResponse proto to a ReadResourceResult object."""
+  return mcp_types.ReadResourceResult(
+      contents=[
+          resource_contents_from_proto(resource_contents)
+          for resource_contents in response.resource
+      ]
+  )
+
+
+def resource_contents_from_proto(
+    contents: mcp_messages_pb2.ResourceContents,
+) -> mcp_types.TextResourceContents | mcp_types.BlobResourceContents:
+  """Converts ResourceContents proto to text/blob ResourceContents object."""
+
+  if contents.blob:
+    return mcp_types.BlobResourceContents(
+        uri=pydantic.AnyUrl(contents.uri),
+        mimeType=contents.mime_type if contents.mime_type else None,
+        blob=contents.blob.decode(),
+    )
+
+  # Note: this considers an empty resource as a text resource by default
+  return mcp_types.TextResourceContents(
+      uri=pydantic.AnyUrl(contents.uri),
+      mimeType=contents.mime_type if contents.mime_type else None,
+      text=contents.text,
   )
 
 

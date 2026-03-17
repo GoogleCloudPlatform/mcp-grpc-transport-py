@@ -26,67 +26,77 @@ class TestClientVersionNegotiation(
     await self.client_session.close()
     await self.test_server.stop()
 
-  @parameterized.named_parameters(
-      dict(
-          version="2025-06-20",
-          testcase_name="_ListToolsUnsupportedVersion",
-          func_name="list_tools",
-          params={},
-          expected_response=mcp_types.ListToolsResult(
-              tools=[
-                  mcp_types.Tool(
-                      name="test_tool",
-                      title="Test Tool",
-                      description="Test Tool",
-                      inputSchema={
-                          "type": "object",
-                          "properties": {"test": {"type": "string"}},
-                      },
-                  )
-              ]
+  @parameterized.product(
+      (
+          dict(
+              func_name="list_tools",
+              params={},
+              expected_response=mcp_types.ListToolsResult(
+                  tools=[
+                      mcp_types.Tool(
+                          name="test_tool",
+                          title="Test Tool",
+                          description="Test Tool",
+                          inputSchema={
+                              "type": "object",
+                              "properties": {"test": {"type": "string"}},
+                          },
+                      )
+                  ]
+              ),
+          ),
+          dict(
+              func_name="call_tool",
+              params={"name": "unused_tool_name"},
+              expected_response=mcp_types.CallToolResult(
+                  content=[],
+                  structuredContent={"test": "test"},
+                  isError=False,
+              ),
+          ),
+          dict(
+              func_name="list_resources",
+              params={},
+              expected_response=mcp_types.ListResourcesResult(
+                  resources=[
+                      mcp_types.Resource(
+                          uri="test://data",
+                          name="Test Resource",
+                          title="Test Resource",
+                          mimeType="text/plain",
+                      )
+                  ]
+              ),
+          ),
+          dict(
+              func_name="list_resource_templates",
+              params={},
+              expected_response=mcp_types.ListResourceTemplatesResult(
+                  resourceTemplates=[
+                      mcp_types.ResourceTemplate(
+                          uriTemplate="test://{name}",
+                          name="Test Resource Template",
+                          description="Test Resource Template",
+                          mimeType="text/plain",
+                      )
+                  ]
+              ),
+          ),
+          dict(
+              func_name="read_resource",
+              params={"uri": "test://data"},
+              expected_response=mcp_types.ReadResourceResult(
+                  contents=[
+                      mcp_types.TextResourceContents(
+                          uri="test://data",
+                          mimeType="text/plain",
+                          text="resource data",
+                      )
+                  ]
+              ),
           ),
       ),
-      dict(
-          version="2025-06-20",
-          testcase_name="_CallToolUnsupportedVersion",
-          func_name="call_tool",
-          params={"name": "unused_tool_name"},
-          expected_response=mcp_types.CallToolResult(
-              content=[],
-              structuredContent={"test": "test"},
-              isError=False,
-          ),
-      ),
-      dict(
-          version="",
-          testcase_name="_ListToolsMissingVersion",
-          func_name="list_tools",
-          params={},
-          expected_response=mcp_types.ListToolsResult(
-              tools=[
-                  mcp_types.Tool(
-                      name="test_tool",
-                      title="Test Tool",
-                      description="Test Tool",
-                      inputSchema={
-                          "type": "object",
-                          "properties": {"test": {"type": "string"}},
-                      },
-                  )
-              ]
-          ),
-      ),
-      dict(
-          version="",
-          testcase_name="_CallToolMissingVersion",
-          func_name="call_tool",
-          params={"name": "unused_tool_name"},
-          expected_response=mcp_types.CallToolResult(
-              content=[],
-              structuredContent={"test": "test"},
-              isError=False,
-          ),
-      ),
+      version=["2025-06-20", ""],
   )
   async def test_version_negotiation_success(
       self, *, version, func_name, params, expected_response

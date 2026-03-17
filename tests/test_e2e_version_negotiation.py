@@ -11,7 +11,7 @@ from google3.testing.pybase import googletest
 from google3.testing.pybase import parameterized
 
 
-class TestE2EVersionNegotiation(
+class TestE2EVersionNegotiationToolRPCs(
     parameterized.TestCase, unittest.IsolatedAsyncioTestCase
 ):
   """Tests the version negotiation logic of the MCP gRPC client and server."""
@@ -106,6 +106,141 @@ class TestE2EVersionNegotiation(
     self.assertIsInstance(content, mcp_types.TextContent)
 
     self.assertEqual(content.text, "Hello World")
+
+
+class TestE2EVersionNegotiationResourceRPCs(
+    parameterized.TestCase, unittest.IsolatedAsyncioTestCase
+):
+  """Tests the version negotiation logic of the MCP gRPC client and server.
+
+  This class tests RPCs related to resources, namely ListResources,
+  ListResourceTemplates, and ReadResource.
+  """
+
+  async def asyncSetUp(self):
+    self.test_server = test_utils.TestServerWithResources()
+    await self.test_server.start_grpc_server()
+
+    self.client_session = mcp_grpc_client.GRPCClientSession(
+        target=f"localhost:{self.test_server.port}",
+    )
+
+  async def asyncTearDown(self):
+    await self.client_session.close()
+    await grpc_server.stop_grpc_server(self.test_server.grpc_server, 1)
+
+  @parameterized.named_parameters(
+      dict(
+          version="2025-06-20",
+          testcase_name="_unsupported_version",
+      ),
+      dict(
+          version="",
+          testcase_name="_missing_version",
+      ),
+  )
+  async def test_list_resources_version_negotiation_success(self, *, version):
+    """Tests version negotiation retry logic for ListResources RPCs."""
+
+    self.client_session.negotiated_version = version
+
+    try:
+      response = await self.client_session.list_resources()
+    except mcp_exceptions.McpError as e:
+      if e.error.code == mcp_types.METHOD_NOT_FOUND:
+        self.fail(
+            "ListResources RPC unexpectedly failed with UNIMPLEMENTED status"
+            f" (equivalent to mcp_types.METHOD_NOT_FOUND) without retrying: {e}"
+        )
+      raise
+
+    # Verify that the response received after retry is valid and contains some
+    # of the expected resources.
+    resources_in_response = response.resources
+
+    with self.subTest(name="VerifyNumberOfResources"):
+      self.assertLen(resources_in_response, self.test_server.num_resources)
+
+    with self.subTest(name="VerifyResourceNames"):
+      resource_names = [t.name for t in resources_in_response]
+      self.assertIn("test_resource", resource_names)
+      self.assertIn("binary_resource", resource_names)
+
+  @parameterized.named_parameters(
+      dict(
+          version="2025-06-20",
+          testcase_name="_unsupported_version",
+      ),
+      dict(
+          version="",
+          testcase_name="_missing_version",
+      ),
+  )
+  async def test_list_resource_templates_version_negotiation_success(
+      self, *, version
+  ):
+    """Tests version negotiation retry logic for ListResourceTemplates RPCs."""
+
+    self.client_session.negotiated_version = version
+
+    try:
+      response = await self.client_session.list_resource_templates()
+    except mcp_exceptions.McpError as e:
+      if e.error.code == mcp_types.METHOD_NOT_FOUND:
+        self.fail(
+            "ListResourceTemplates RPC unexpectedly failed with UNIMPLEMENTED"
+            f" (equivalent to mcp_types.METHOD_NOT_FOUND) without retrying: {e}"
+        )
+      raise
+
+    # Verify that the response received after retry is valid and contains some
+    # of the expected resources.
+    resource_templates_in_response = response.resourceTemplates
+
+    with self.subTest(name="VerifyNumberOfResourceTemplates"):
+      self.assertLen(
+          resource_templates_in_response,
+          self.test_server.num_resource_templates,
+      )
+
+    with self.subTest(name="VerifyResourceNames"):
+      resource_names = [t.name for t in resource_templates_in_response]
+      self.assertIn("template_resource", resource_names)
+
+  @parameterized.named_parameters(
+      dict(
+          version="2025-06-20",
+          testcase_name="_unsupported_version",
+      ),
+      dict(
+          version="",
+          testcase_name="_missing_version",
+      ),
+  )
+  async def test_read_resource_version_negotiation_success(self, *, version):
+    self.client_session.negotiated_version = version
+
+    try:
+      response = await self.client_session.read_resource(uri="test://data")
+    except mcp_exceptions.McpError as e:
+      if e.error.code == mcp_types.METHOD_NOT_FOUND:
+        self.fail(
+            "ListResourceTemplates RPC unexpectedly failed with UNIMPLEMENTED"
+            f" (equivalent to mcp_types.METHOD_NOT_FOUND) without retrying: {e}"
+        )
+      raise
+
+    # Verify that the response received after retry is valid.
+    self.assertIsInstance(response, mcp_types.ReadResourceResult)
+
+    expected_resource_contents = mcp_types.TextResourceContents(
+        uri="test://data",
+        mimeType="text/plain",
+        text="resource data",
+    )
+
+    contents, = response.contents
+    self.assertEqual(contents, expected_resource_contents)
 
 
 if __name__ == "__main__":

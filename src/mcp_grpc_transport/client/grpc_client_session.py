@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
-from typing import Any, TypeAlias
+from typing import Any
 import uuid
 
 import grpc
@@ -263,6 +263,72 @@ class GRPCClientSession(mcp_grpc_client.ClientTransportSession):
     finally:
       self._ongoing_requests.discard(request_id)
 
+  async def list_resources(self) -> mcp_types.ListResourcesResult:
+    """Sends a resources/list request."""
+    list_resources_request_proto = mcp_messages_pb2.ListResourcesRequest()
+    try:
+      list_resources_response_proto = (
+          await self._call_unary_rpc_with_version_negotiation(
+              self.stub.ListResources, list_resources_request_proto,
+          )
+      )
+      return convert_types.list_resources_result_from_proto(
+          list_resources_response_proto
+      )
+    except Exception as e:
+      logger.exception("Error during ListResources.")
+      raise convert_types.convert_exception_to_mcp_error(
+          e, "Error during ListResources"
+      ) from e
+
+  async def list_resource_templates(
+      self
+  ) -> mcp_types.ListResourceTemplatesResult:
+    """Sends a resources/templates/list request."""
+    list_resource_templates_request_proto = (
+        mcp_messages_pb2.ListResourceTemplatesRequest()
+    )
+    try:
+      list_resource_templates_response_proto = (
+          await self._call_unary_rpc_with_version_negotiation(
+              self.stub.ListResourceTemplates,
+              list_resource_templates_request_proto,
+          )
+      )
+      return convert_types.list_resource_templates_result_from_proto(
+          list_resource_templates_response_proto
+      )
+    except Exception as e:
+      logger.exception("Error during ListResourceTemplates.")
+      raise convert_types.convert_exception_to_mcp_error(
+          e, "Error during ListResourceTemplates"
+      ) from e
+
+  async def read_resource(
+      self, uri: pydantic.AnyUrl
+  ) -> mcp_types.ReadResourceResult:
+    """Sends a resources/read request."""
+    read_resource_request_proto = (
+        convert_types.read_resource_request_params_to_proto(
+            mcp_types.ReadResourceRequestParams(uri=uri)
+        )
+    )
+    try:
+      read_resource_response_proto = (
+          await self._call_unary_rpc_with_version_negotiation(
+              self.stub.ReadResource,
+              read_resource_request_proto,
+          )
+      )
+      return convert_types.read_resource_result_from_proto(
+          read_resource_response_proto
+      )
+    except Exception as e:
+      logger.exception("Error during ReadResource for uri: %s", uri)
+      raise convert_types.convert_exception_to_mcp_error(
+          e, f"Error during ReadResource for uri: {uri}"
+      ) from e
+
 
   #####################################################################
   # TODO(ssreenithi): Check and add support for the following methods
@@ -275,22 +341,6 @@ class GRPCClientSession(mcp_grpc_client.ClientTransportSession):
 
   async def send_ping(self) -> mcp_types.EmptyResult:
     """Send a ping request."""
-    raise NotImplementedError
-
-  async def list_resources(self) -> mcp_types.ListResourcesResult:
-    """Send a resources/list request."""
-    raise NotImplementedError
-
-  async def list_resource_templates(
-      self
-  ) -> mcp_types.ListResourceTemplatesResult:
-    """Send a resources/templates/list request."""
-    raise NotImplementedError
-
-  async def read_resource(
-      self, uri: pydantic.AnyUrl
-  ) -> mcp_types.ReadResourceResult:
-    """Send a resources/read request."""
     raise NotImplementedError
 
   async def subscribe_resource(
