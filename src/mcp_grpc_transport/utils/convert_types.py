@@ -21,7 +21,19 @@ def convert_grpc_error_to_mcp_error(
     grpc_error: grpc.aio.AioRpcError,
     error_msg_prefix: str,
 ) -> mcp_exceptions.McpError:
-  """Converts a gRPC error to a MCP error."""
+  """Converts a gRPC error to a MCP error.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      grpc_error: The gRPC error to convert.
+      error_msg_prefix: The prefix to add to the error message.
+
+  Returns:
+      The converted MCP error.
+  """
 
   if grpc_error.code() is grpc.StatusCode.INVALID_ARGUMENT:
     details = grpc_error.details()
@@ -57,7 +69,19 @@ def convert_exception_to_mcp_error(
     error: Exception,
     error_msg_prefix: str,
 ) -> mcp_exceptions.McpError:
-  """Converts an exception to its corresponding MCP error."""
+  """Converts an exception to its corresponding MCP error.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      error: The exception to convert.
+      error_msg_prefix: The prefix to add to the error message.
+
+  Returns:
+      The converted MCP error.
+  """
 
   if isinstance(error, grpc.aio.AioRpcError):
     return convert_grpc_error_to_mcp_error(error, error_msg_prefix)
@@ -84,7 +108,19 @@ def convert_exception_to_mcp_error(
 def list_resources_result_from_proto(
     list_resources_response_proto: mcp_messages_pb2.ListResourcesResponse,
 ) -> mcp_types.ListResourcesResult:
-  """Converts ListResourcesResponse proto to MCP ListResourcesResult object."""
+  """Converts ListResourcesResponse proto to MCP ListResourcesResult object.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      list_resources_response_proto: The ListResourcesResponse proto to convert
+        from.
+
+  Returns:
+      The converted MCP ListResourcesResult object.
+  """
 
   return mcp_types.ListResourcesResult(
       resources=[
@@ -97,7 +133,18 @@ def list_resources_result_from_proto(
 def resource_from_proto(
     proto: mcp_messages_pb2.Resource,
 ) -> mcp_types.Resource:
-  """Converts a Protobuf Resource message to a MCP Resource type."""
+  """Converts a Protobuf Resource message to a MCP Resource type.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      proto: The Protobuf Resource message to convert.
+
+  Returns:
+      The converted MCP Resource type.
+  """
 
   return mcp_types.Resource(
       uri=pydantic.AnyUrl(proto.uri),
@@ -113,6 +160,10 @@ def resource_to_proto(
     resource: mcp_types.Resource
 ) -> mcp_messages_pb2.Resource:
   """Converts a MCP Resource type to a Protobuf Resource message.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       resource: The MCP Resource type to convert.
@@ -138,7 +189,19 @@ def resource_to_proto(
 def list_resource_templates_result_from_proto(
     list_res_templates_resp_proto: mcp_messages_pb2.ListResourceTemplatesResponse,
 ) -> mcp_types.ListResourceTemplatesResult:
-  """Converts ListResourceTemplatesResponse proto to equivalent MCP object."""
+  """Converts ListResourceTemplatesResponse proto to equivalent MCP object.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      list_res_templates_resp_proto: The ListResourceTemplatesResponse proto to
+        convert from.
+
+  Returns:
+      The converted MCP ListResourceTemplatesResult object.
+  """
 
   return mcp_types.ListResourceTemplatesResult(
       resourceTemplates=[
@@ -153,7 +216,18 @@ def list_resource_templates_result_from_proto(
 def resource_template_from_proto(
     proto: mcp_messages_pb2.ResourceTemplate,
 ) -> mcp_types.ResourceTemplate:
-  """Converts a ResourceTemplate proto message to MCP ResourceTemplate type."""
+  """Converts a ResourceTemplate proto message to MCP ResourceTemplate type.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      proto: The ResourceTemplate proto message to convert.
+
+  Returns:
+      The converted MCP ResourceTemplate type.
+  """
   return mcp_types.ResourceTemplate(
       uriTemplate=proto.uri_template,
       name=proto.name,
@@ -167,6 +241,10 @@ def resource_template_to_proto(
     resource_template: mcp_types.ResourceTemplate
 ) -> mcp_messages_pb2.ResourceTemplate:
   """Converts a MCP ResourceTemplate type to Protobuf ResourceTemplate message.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       resource_template: The MCP ResourceTemplate type to convert.
@@ -193,6 +271,10 @@ def read_resource_request_params_from_proto(
 ) -> mcp_types.ReadResourceRequestParams:
   """Converts ReadResourceRequest proto to a ReadResourceRequestParams object.
 
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
   Args:
       request: The ReadResourceRequest proto message to convert.
 
@@ -210,6 +292,10 @@ def read_resource_request_params_to_proto(
 ) -> mcp_messages_pb2.ReadResourceRequest:
   """Converts ReadResourceRequestParams object to ReadResourceRequest proto.
 
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
   Args:
       request: The ReadResourceRequestParams object to convert.
 
@@ -225,7 +311,18 @@ def read_resource_request_params_to_proto(
 def read_resource_result_from_proto(
     response: mcp_messages_pb2.ReadResourceResponse,
 ) -> mcp_types.ReadResourceResult:
-  """Converts ReadResourceResponse proto to a ReadResourceResult object."""
+  """Converts ReadResourceResponse proto to a ReadResourceResult object.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      response: The ReadResourceResponse proto to convert.
+
+  Returns:
+      The converted ReadResourceResult object.
+  """
   return mcp_types.ReadResourceResult(
       contents=[
           resource_contents_from_proto(resource_contents)
@@ -237,7 +334,18 @@ def read_resource_result_from_proto(
 def resource_contents_from_proto(
     contents: mcp_messages_pb2.ResourceContents,
 ) -> mcp_types.TextResourceContents | mcp_types.BlobResourceContents:
-  """Converts ResourceContents proto to text/blob ResourceContents object."""
+  """Converts ResourceContents proto to text/blob ResourceContents object.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      contents: The ResourceContents proto to convert.
+
+  Returns:
+      The converted Text/Blob ResourceContents object.
+  """
 
   if contents.blob:
     return mcp_types.BlobResourceContents(
@@ -259,6 +367,10 @@ def resource_contents_to_proto(
     resource_contents: mcp_helper_types.ReadResourceContents
 ) -> mcp_messages_pb2.ResourceContents:
   """Converts a MCP ReadResourceContents type to ResourceContents proto message.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       uri: The URI of the resource.
@@ -291,6 +403,10 @@ def list_tools_result_from_proto(
 ) -> mcp_types.ListToolsResult:
   """Converts a Protobuf ListToolsResponse message to a MCP ListToolsResult type.
 
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
   Args:
       list_tools_response_proto: The Protobuf ListToolsResponse message to
         convert from.
@@ -307,6 +423,10 @@ def list_tools_result_from_proto(
 
 def tool_from_proto(tool: mcp_messages_pb2.Tool) -> mcp_types.Tool:
   """Converts a Protobuf Tool message to a MCP Tool type.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       tool: The Protobuf Tool message to convert.
@@ -339,6 +459,10 @@ def tool_from_proto(tool: mcp_messages_pb2.Tool) -> mcp_types.Tool:
 
 def tool_to_proto(tool: mcp_types.Tool) -> mcp_messages_pb2.Tool:
   """Converts a MCP Tool type to a Protobuf Tool message.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       tool: The MCP Tool type to convert.
@@ -383,6 +507,10 @@ def call_tool_params_from_proto(
 ) -> mcp_types.CallToolRequestParams:
   """Extracts CallToolRequestParams from a CallToolRequest proto message.
 
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
   Args:
       request: The CallToolRequest proto message to extract from.
 
@@ -404,6 +532,10 @@ def call_tool_params_to_proto(
     call_tool_params: mcp_types.CallToolRequestParams,
 ) -> mcp_messages_pb2.CallToolRequest:
   """Converts a CallToolRequestParams object to a CallToolRequest proto message.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       call_tool_params: The CallToolRequestParams object to convert.
@@ -430,6 +562,10 @@ def validate_call_tool_request_proto(
     request: mcp_messages_pb2.CallToolRequest,
 ) -> None:
   """Validates the CallToolRequest proto message.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       request: The CallToolRequest to validate.
@@ -666,6 +802,10 @@ def call_tool_result_from_proto(
 ) -> mcp_types.CallToolResult:
   """Converts a CallToolResponse proto message to a CallToolResult object.
 
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
   Args:
       response: The CallToolResponse proto message to convert from.
 
@@ -694,6 +834,10 @@ def call_tool_result_to_proto(
     result: mcp_types.CallToolResult,
 ) -> mcp_messages_pb2.CallToolResponse:
   """Converts the mcp_types.CallToolResult object to a CallToolResponse Proto message.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       result: The mcp_types.CallToolResult object to convert.
@@ -724,7 +868,18 @@ def call_tool_result_to_proto(
 def tool_error_to_call_tool_result(
     error: ToolError,
 ) -> mcp_types.CallToolResult:
-  """Converts a ToolError to a CallToolResult."""
+  """Converts a ToolError to a CallToolResult.
+
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
+
+  Args:
+      error: The ToolError to convert.
+
+  Returns:
+      The converted CallToolResult object.
+  """
 
   return mcp_types.CallToolResult(
       content=[mcp_types.TextContent(type="text", text=f"{error!r}")],
@@ -741,8 +896,11 @@ def unify_call_tool_result(
         | mcp_types.CallToolResult
     ),
 ) -> mcp_types.CallToolResult:
-  """Converts the response object returned by FastMCP.call_tool to a standard mcp_types.CallToolResult object.
+  """Converts response from FastMCP.call_tool to standard CallToolResult object.
 
+  THIS IS AN EXPERIMENTAL API.
+  It is subject to change or removal between minor releases.
+  Proceed with caution.
 
   Args:
       result: The result object from FastMCP.call_tool to convert, which can be
