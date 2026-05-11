@@ -7,10 +7,11 @@ from tests import test_utils
 
 from google.protobuf import struct_pb2
 from google3.testing.pybase import googletest
+from google3.testing.pybase import parameterized
 from mcp_grpc_transport_proto import mcp_messages_pb2
 
 
-class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
+class TestCallToolRPC(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
   """Tests the different RPCs of the MCP gRPC server."""
 
   async def asyncSetUp(self):
@@ -195,76 +196,56 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
     with self.assertRaises(asyncio.CancelledError):
       await call
 
-  async def test_call_tool_with_no_tool_name(self):
-    """Tests CallTool RPC with no tool name."""
-    args = struct_pb2.Struct()
-    args.update({"message": "World"})
-
-    response = await self._make_tool_call("", args)
-    self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
-
-    self.assertTrue(response.is_error)
-
-    contents = response.content
-
-    for content in contents:
-      if content.HasField("text"):
-        error_msg = content.text.text
-        self.assertIn("Tool name cannot be empty.", error_msg)
-        break
-    else:
-      self.fail("No error text content found in the response.")
-
-  async def test_call_tool_wrong_args(self):
-    """Tests the CallTool RPC with wrong arguments."""
-
-    args = struct_pb2.Struct()
-    tool_name = "echo"
-    response = await self._make_tool_call(tool_name, args)
-    self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
-
-    self.assertTrue(response.is_error)
-
-    contents = response.content
-
-    for content in contents:
-      if content.HasField("text"):
-        error_msg = content.text.text
-
-        self.assertIn(f"1 validation error for {tool_name}", error_msg)
-        self.assertIn(
-            "Arguments\\nmessage\\n  Field required [type=missing,"
-            " input_value={}, input_type=dict]",
-            error_msg,
-        )
-        break
-    else:
-      self.fail("No error text content found in the response.")
-
-  async def test_call_tool_that_raises_exception(self):
-    """Tests the CallTool RPC with a tool that raises an exception."""
-    args = struct_pb2.Struct()
-    response = await self._make_tool_call("invalidTool", args)
-    self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
-
-    self.assertTrue(response.is_error)
-
-    contents = response.content
-
-    for content in contents:
-      if content.HasField("text"):
-        error_msg = content.text.text
-        self.assertIn(
-            "Error executing tool invalidTool: invalid tool", error_msg
-        )
-        break
-    else:
-      self.fail("No error text content found in the response.")
-
-  async def test_call_tool_with_wrong_output(self):
-    """Tests the CallTool RPC with a tool that returns wrong output."""
-    args = struct_pb2.Struct()
-    tool_name = "tool_with_wrong_output"
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="_no_tool_name",
+          tool_name="",
+          args=struct_pb2.Struct(),
+          expected_error_msgs=[
+              "Tool name cannot be empty.",
+          ],
+      ),
+      dict(
+          testcase_name="_non_existent_tool",
+          tool_name="non_existent_tool",
+          args=struct_pb2.Struct(),
+          expected_error_msgs=[
+              "Unknown tool: non_existent_tool",
+          ],
+      ),
+      dict(
+          testcase_name="_wrong_args",
+          tool_name="echo",
+          args=struct_pb2.Struct(),
+          expected_error_msgs=[
+              "1 validation error for echo",
+              "Arguments\\nmessage\\n  Field required [type=missing,"
+              + " input_value={}, input_type=dict]",
+          ],
+      ),
+      dict(
+          testcase_name="_tool_raises_exception",
+          tool_name="invalidTool",
+          args=struct_pb2.Struct(),
+          expected_error_msgs=[
+              "Error executing tool invalidTool: invalid tool",
+          ],
+      ),
+      dict(
+          testcase_name="_wrong_output",
+          tool_name="tool_with_wrong_output",
+          args=struct_pb2.Struct(),
+          expected_error_msgs=[
+              "1 validation error for tool_with_wrong_output",
+              "Output\\nresult\\n  Input should be a valid string "
+              + "[type=string_type, input_value=123, input_type=int]",
+          ],
+      ),
+  )
+  async def test_call_tool_error_case(
+      self, tool_name, args, expected_error_msgs
+  ):
+    """Tests CallTool RPC error cases."""
 
     response = await self._make_tool_call(tool_name, args)
     self.assertIsInstance(response, mcp_messages_pb2.CallToolResponse)
@@ -273,18 +254,16 @@ class TestCallToolRPC(unittest.IsolatedAsyncioTestCase):
 
     contents = response.content
 
-    for content in contents:
-      if content.HasField("text"):
-        error_msg = content.text.text
-        self.assertIn(f"1 validation error for {tool_name}", error_msg)
-        self.assertIn(
-            "Output\\nresult\\n  Input should be a valid string "
-            "[type=string_type, input_value=123, input_type=int]",
-            error_msg,
-        )
-        break
-    else:
-      self.fail("No error text content found in the response.")
+    self.assertLen(contents, 1)
+    (content,) = contents
+
+    self.assertTrue(
+        content.HasField("text"), "No error text content found in the response."
+    )
+    error_msg = content.text.text
+    for expected_error_msg in expected_error_msgs:
+      self.assertIn(expected_error_msg, error_msg)
+
 
 if __name__ == "__main__":
   googletest.main()

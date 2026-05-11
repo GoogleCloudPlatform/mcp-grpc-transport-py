@@ -37,7 +37,6 @@ class TestClientCallToolRPC(unittest.IsolatedAsyncioTestCase):
       self.assertDictEqual(response.structuredContent, {"test": "test"})
 
 
-
 class TestClientCallToolRPCFailure(unittest.IsolatedAsyncioTestCase):
   """Tests the CallTool RPCs of the MCP gRPC server."""
 
@@ -71,15 +70,18 @@ class TestClientCallToolRPCFailure(unittest.IsolatedAsyncioTestCase):
   async def test_call_tool_error_response(self):
     """Tests the CallTool RPC with error."""
 
-    with self.assertRaises(mcp_exceptions.McpError) as context:
-      await self.client_session.call_tool("test_tool", {"send_error": "true"})
-
-    exception_msg = context.exception.error.message
-
-    self.assertEqual(
-        "Error response from tool call: Fake error response from CallTool",
-        exception_msg,
+    response = await self.client_session.call_tool(
+        "test_tool", {"send_error": "true"}
     )
+
+    self.assertIsInstance(response, mcp_types.CallToolResult)
+    self.assertTrue(response.isError)
+
+    self.assertEqual(len(response.content), 1)
+    content, = response.content
+
+    self.assertEqual(content.text, "Fake error response from CallTool")
+
 
 if __name__ == "__main__":
   googletest.main()

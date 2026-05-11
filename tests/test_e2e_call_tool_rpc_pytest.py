@@ -3,7 +3,6 @@ import pytest
 import pytest_asyncio
 
 from mcp import types as mcp_types
-from mcp.shared import exceptions as mcp_exceptions
 import mcp_grpc_transport.client as mcp_grpc_client
 from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
@@ -169,17 +168,18 @@ async def test_embedded_resource_outputs(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "tool_name, args, expected_error_msg_regexes",
+    "tool_name, args, expected_error_msgs",
     [
         ("", {}, ["Tool name cannot be empty."]),
+        ("non_existent_tool", {}, ["Unknown tool: non_existent_tool"]),
         (
             "echo",
             {},
             [
                 "1 validation error for echo",
                 (
-                    r"Arguments\nmessage\n  Field required \[type=missing,"
-                    r" input_value=\{\}, input_type=dict\]"
+                    r"Arguments\nmessage\n  Field required [type=missing,"
+                    r" input_value={}, input_type=dict]"
                 ),
             ],
         ),
@@ -191,19 +191,27 @@ async def test_embedded_resource_outputs(
                 "1 validation error for tool_with_wrong_output",
                 (
                     r"Output\nresult\n  Input should be a valid string"
-                    r" \[type=string_type, input_value=123, input_type=int\]"
+                    r" [type=string_type, input_value=123, input_type=int]"
                 ),
             ],
         ),
     ],
 )
-async def test_call_tool_that_raises_exception(
-    mcp_client, tool_name, args, expected_error_msg_regexes
+async def test_call_tool_with_error_response(
+    mcp_client, tool_name, args, expected_error_msgs
 ):
-  """Tests the CallTool RPC with tools that will raise an exception."""
+  """Tests the CallTool RPC for cases when an error response is returned.
 
-  with pytest.raises(mcp_exceptions.McpError) as context:
-    await mcp_client.call_tool(tool_name, args)
+  This tests cases like tool not found, input/output schema mismatch,
+  or tool related errors that are sent as Text response with isError=True.
+  """
+  response = await mcp_client.call_tool(tool_name, args)
 
-    for expected_error_msg_regex in expected_error_msg_regexes:
-      context.match(expected_error_msg_regex)
+  assert isinstance(response, mcp_types.CallToolResult)
+  assert response.isError
+  assert len(response.content) == 1
+  content, = response.content
+  error_msg = content.text
+
+  for expected_error in expected_error_msgs:
+    assert expected_error in error_msg

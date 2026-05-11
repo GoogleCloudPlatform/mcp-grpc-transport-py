@@ -231,30 +231,11 @@ class GRPCClientSession(mcp_grpc_client.ClientTransportSession):
       response = await self._call_unary_rpc_with_version_negotiation(
           self.stub.CallTool, request_proto, timeout=timeout,
       )
-      call_tool_result = convert_types.call_tool_result_from_proto(response)
 
-      if call_tool_result.isError:
-        error_msg = next(
-            (
-                c.text
-                for c in call_tool_result.content
-                if isinstance(c, mcp_types.TextContent)
-            ),
-            "",
-        )
-
-        # TODO(ssreenithi): Fix this and server side error response to raise
-        # the correct MCP error code
-        raise mcp_exceptions.McpError(
-            mcp_types.ErrorData(
-                code=mcp_types.INTERNAL_ERROR,
-                message=f"Error response from tool call: {error_msg}",
-            )
-        )
-      return call_tool_result
+      return convert_types.call_tool_result_from_proto(response)
 
     except Exception as e:
-      logger.error("Error during CallTool for tool: %s", name, exc_info=True)
+      logger.exception("Error during CallTool for tool: %s", name)
       mcp_error = convert_types.convert_exception_to_mcp_error(
           e, "Error during CallTool"
       )
@@ -328,7 +309,6 @@ class GRPCClientSession(mcp_grpc_client.ClientTransportSession):
       raise convert_types.convert_exception_to_mcp_error(
           e, f"Error during ReadResource for uri: {uri}"
       ) from e
-
 
   #####################################################################
   # TODO(ssreenithi): Check and add support for the following methods
