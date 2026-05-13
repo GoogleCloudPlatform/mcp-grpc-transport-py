@@ -6,7 +6,6 @@ from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
 from mcp_grpc_transport.utils import convert_types
 
-from google3.net.proto2.contrib.pyutil import compare
 from google3.testing.pybase import googletest
 from mcp_grpc_transport_proto import mcp_messages_pb2
 
@@ -50,7 +49,7 @@ class TestListResourcesAndTemplatesRPC(unittest.IsolatedAsyncioTestCase):
         title="",
     )
     with self.subTest(name="VerifyTestResourceAttributes"):
-      compare.assertProto2Equal(self, expected_resource, test_resource)
+      self.assertEqual(expected_resource, test_resource)
 
   async def test_list_resources_error(self):
     """Tests the ListResources RPC aborts correctly when an error occurs."""
@@ -101,7 +100,7 @@ class TestListResourcesAndTemplatesRPC(unittest.IsolatedAsyncioTestCase):
         mime_type="text/plain",
     )
     with self.subTest(name="VerifyTestResourceTemplateAttributes"):
-      compare.assertProto2Equal(self, expected_template, test_template)
+      self.assertEqual(expected_template, test_template)
 
   async def test_list_resource_templates_error(self):
     """Tests ListResourceTemplates RPC aborts correctly when error occurs."""

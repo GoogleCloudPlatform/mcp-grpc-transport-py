@@ -5,7 +5,6 @@ from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
 from mcp_grpc_transport.utils import convert_types
 
-from google3.net.proto2.contrib.pyutil import compare
 from google3.testing.pybase import googletest
 from google3.testing.pybase import parameterized
 from mcp_grpc_transport_proto import mcp_messages_pb2
@@ -65,9 +64,7 @@ class TestReadResourceRPC(
         text=text,
         blob=blob,
     )
-    compare.assertProto2Equal(
-        self, expected_resource_contents, resource_contents
-    )
+    self.assertEqual(expected_resource_contents, resource_contents)
 
   async def test_read_resource_template_success(self):
     """Tests the ReadResource RPC."""
@@ -83,9 +80,7 @@ class TestReadResourceRPC(
         text="Hello, world!",
         blob=b"",
     )
-    compare.assertProto2Equal(
-        self, expected_resource_contents, resource_contents
-    )
+    self.assertEqual(expected_resource_contents, resource_contents)
 
   async def test_read_unknown_resource(self):
     """Tests ReadResource RPC aborts on ValueError("Unknown resource")."""
@@ -163,9 +158,7 @@ class TestReadLargeTextResourceRPC(unittest.IsolatedAsyncioTestCase):
         text="a" * (5 * 1024 * 1024),
         blob=b"",
     )
-    compare.assertProto2Equal(
-        self, expected_resource_contents, resource_contents
-    )
+    self.assertEqual(expected_resource_contents, resource_contents)
 
   async def test_read_large_text_resource_error(self):
     """Tests the ReadResource RPC for a large text resource fails."""
