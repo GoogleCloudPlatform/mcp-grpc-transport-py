@@ -3,6 +3,7 @@
 import os
 import socket
 import subprocess
+import sys
 import time
 from absl import logging
 from absl.testing import absltest
@@ -35,23 +36,35 @@ class ExampleE2ETest(parameterized.TestCase):
     port = test_utils.find_free_port()
     logging.info("Testing example in %s on port %d", example_dir, port)
 
-    # In Google3/Bazel, data dependencies are accessible via relative paths
+    # Data dependencies are accessible via relative paths
     # from the test file's directory within the runfiles.
     test_dir = os.path.dirname(os.path.abspath(__file__))
     examples_base = os.path.join(test_dir, "..", "examples")
 
+    # sys.executable is None when the interpreter is not available (eg. when
+    # running via Bazel). So use this as a condition to check if the test is
+    # running in OSS
+    sys_executable = [] if sys.executable is None else [sys.executable]
+    if sys.executable is None:
+      server_bin = "server"
+      client_bin = "client"
+    else:
+      server_bin = "server.py"
+      client_bin = "client.py"
+
     server_path = os.path.abspath(
-        os.path.join(examples_base, example_dir, "server")
+        os.path.join(examples_base, example_dir, server_bin)
     )
     client_path = os.path.abspath(
-        os.path.join(examples_base, example_dir, "client")
+        os.path.join(examples_base, example_dir, client_bin)
     )
 
     logging.info("Resolved server path: %s", server_path)
     if not os.path.exists(server_path):
       self.fail(f"Server binary not found at {server_path}")
+
     server_process = subprocess.Popen(
-        [server_path, f"--port={port}"],
+        sys_executable + [server_path, f"--port={port}"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -73,13 +86,14 @@ class ExampleE2ETest(parameterized.TestCase):
         )
 
       # Run client
-      client_args = [
+      client_args = sys_executable + [
           client_path,
           "--server_host=localhost",
           f"--server_port={port}",
       ]
 
       logging.info("Running client: %s", " ".join(client_args))
+
       client_result = subprocess.run(
           client_args,
           check=True,
@@ -103,6 +117,12 @@ class ExampleE2ETest(parameterized.TestCase):
         )
 
     finally:
+      # Clean up server streams to prevent ResourceWarning
+      if server_process.stdout:
+        server_process.stdout.close()
+      if server_process.stderr:
+        server_process.stderr.close()
+
       # Clean up server
       if server_process.poll() is None:
         server_process.terminate()
