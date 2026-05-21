@@ -1,13 +1,12 @@
 import unittest
 
-import grpc
+from absl.testing import absltest
 from google.protobuf import json_format
+import grpc
+from mcp_grpc_transport_proto import mcp_messages_pb2
 from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
 from mcp_grpc_transport.utils import convert_types
-
-from google3.testing.pybase import googletest
-from mcp_grpc_transport_proto import mcp_messages_pb2
 
 
 class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
@@ -84,4 +83,4 @@ class TestListToolsRPC(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-  googletest.main()
+  absltest.main()

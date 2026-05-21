@@ -6,7 +6,6 @@ import anyio
 from grpc import aio
 from mcp.server.fastmcp import FastMCP
 from mcp_grpc_transport.server import grpc_server
-
 from tests import test_utils
 
 

@@ -1,14 +1,13 @@
 import unittest
 from unittest import mock
 
+from absl.testing import absltest
 import grpc
 from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
 from mcp_grpc_transport.utils import convert_types
 
-from google3.testing.pybase import googletest
 from mcp_grpc_transport_proto import mcp_messages_pb2
-
 
 class TestListResourcesAndTemplatesRPC(unittest.IsolatedAsyncioTestCase):
   """Test suite for ListResources and ListResourceTemplates server handlers."""
@@ -128,4 +127,4 @@ class TestListResourcesAndTemplatesRPC(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-  googletest.main()
+  absltest.main()

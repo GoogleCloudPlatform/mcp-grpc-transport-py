@@ -1,12 +1,11 @@
-import unittest
 from typing import Any
+import unittest
 
+from absl.testing import absltest
 from mcp import types as mcp_types
 import mcp_grpc_transport.client as mcp_grpc_client
 from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
-
-from google3.testing.pybase import googletest
 
 
 # Helper functions for this test. As it is specific to this test, it is kept
@@ -147,4 +146,4 @@ class TestE2EDynamicCallTool(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-  googletest.main()
+  absltest.main()

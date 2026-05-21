@@ -1,12 +1,12 @@
 import base64
-import pytest
-import pytest_asyncio
 
 from mcp import types as mcp_types
+from pydantic.networks import AnyUrl
+import pytest
+import pytest_asyncio
 import mcp_grpc_transport.client as mcp_grpc_client
 from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
-from pydantic.networks import AnyUrl
 
 
 @pytest_asyncio.fixture

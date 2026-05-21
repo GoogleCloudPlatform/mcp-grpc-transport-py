@@ -1,14 +1,13 @@
 import unittest
 
+from absl.testing import absltest
+from absl.testing import parameterized
 from mcp import types as mcp_types
 from mcp.shared import exceptions as mcp_exceptions
 import mcp_grpc_transport.client as mcp_grpc_client
 from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
 from mcp_grpc_transport.utils import convert_types
-
-from google3.testing.pybase import googletest
-from google3.testing.pybase import parameterized
 
 
 class TestReadResourceRPC(
@@ -165,4 +164,4 @@ class TestReadLargeTextResourceRPC(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-  googletest.main()
+  absltest.main()

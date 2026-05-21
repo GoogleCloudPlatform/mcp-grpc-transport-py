@@ -2,13 +2,12 @@ import asyncio
 import base64
 import unittest
 
+from absl.testing import absltest
+from absl.testing import parameterized
+from google.protobuf import struct_pb2
+from mcp_grpc_transport_proto import mcp_messages_pb2
 from mcp_grpc_transport.server import grpc_server
 from tests import test_utils
-
-from google.protobuf import struct_pb2
-from google3.testing.pybase import googletest
-from google3.testing.pybase import parameterized
-from mcp_grpc_transport_proto import mcp_messages_pb2
 
 
 class TestCallToolRPC(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
@@ -279,4 +278,4 @@ class TestCallToolRPC(parameterized.TestCase, unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-  googletest.main()
+  absltest.main()

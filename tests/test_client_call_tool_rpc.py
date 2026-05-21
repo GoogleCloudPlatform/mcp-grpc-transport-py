@@ -1,11 +1,10 @@
 import unittest
 
+from absl.testing import absltest
 from mcp import types as mcp_types
 from mcp.shared import exceptions as mcp_exceptions
 import mcp_grpc_transport.client as mcp_grpc_client
 from tests import test_utils
-
-from google3.testing.pybase import googletest
 
 
 class TestClientCallToolRPC(unittest.IsolatedAsyncioTestCase):
@@ -84,4 +83,4 @@ class TestClientCallToolRPCFailure(unittest.IsolatedAsyncioTestCase):
 
 
 if __name__ == "__main__":
-  googletest.main()
+  absltest.main()
