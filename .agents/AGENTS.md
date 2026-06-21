@@ -1,27 +1,8 @@
-# Developer Guidelines (AGENTS.md)
+# Developer Guidelines
 
-Welcome to the `mcp-grpc-transport-py` project. This file provides generic guidelines for AI agents and developers modifying this codebase.
+The canonical guidelines for this project live in the repository root:
 
-## Project Structure & Guidelines Pointers
+→ [../AGENTS.md](../AGENTS.md)
 
-This project uses a hierarchical guidelines model. For specific files and packages, consult their local guidelines files:
-*   For the library core source code under `src/`: See [src/mcp_grpc_transport/AGENTS.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/src/mcp_grpc_transport/AGENTS.md)
-*   For writing and executing tests under `tests/`: See [tests/AGENTS.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/tests/AGENTS.md)
-*   For adding or modifying example scripts under `examples/`: See [examples/AGENTS.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/examples/AGENTS.md)
-
----
-
-## Package Management
-
-*   **Tooling:** Use **`uv`** for managing dependencies and running commands. **Never use `pip` directly.**
-*   **Running Commands:** Run commands using `uv run`. For example:
-    *   To run tests: `uv run pytest`
-    *   To run formatting: `uv run ruff format .` (if ruff is added)
-*   **Adding Dependencies:** Use `uv add <package>` or `uv add --dev <package>`. Avoid manual edits to `pyproject.toml` unless strictly necessary.
-
-## General Coding Standards
-
-*   **Line Length:** Keep bullet points and lines reasonably short to prevent wrapping.
-*   **Formatting:** Maintain clean code formatting. Use standard formatting utilities where appropriate.
-*   **Documentation:** Ensure all code edits are properly documented with clear explanations. Add inline comments for any non-obvious design choices.
-*   **Commit Policy:** Do not commit changes to the repository without explicit user approval.
+This pointer exists so tools that auto-discover guidance from `.agents/`
+also reach the same content. Edit the root file, not this one.

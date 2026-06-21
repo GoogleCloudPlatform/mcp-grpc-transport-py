@@ -28,23 +28,14 @@ Performs pure model mapping:
 
 ## Architectural Design Choices
 
-### 1. Stateless Handshake Mocking
-The gRPC wire-level protobuf schema has no `Initialize` RPC. To satisfy the `ClientSession.initialize()` requirements of the V2 SDK, `GRPCClientDispatcher` intercepts the `"initialize"` request method name and returns a mock `InitializeResult` payload locally without initiating any wire calls:
+### 1. No Initialize Handshake
+The gRPC wire-level protobuf schema has no `Initialize` RPC and the transport intentionally does **not** perform any MCP-level handshake — no capability negotiation, no protocol-version exchange, no `serverInfo`. Callers must not invoke `session.initialize()` on a session bound to this dispatcher; doing so raises `METHOD_NOT_FOUND`. `ClientSession`'s other methods fall back to a default protocol version when init has not run, so list/read/call methods work as expected without it.
 
-```python
-if method == "initialize":
-    return {
-        "protocolVersion": mcp_types.LATEST_PROTOCOL_VERSION,
-        "capabilities": {"tools": {}, "resources": {}},
-        "serverInfo": {"name": "gRPC-Client-Dispatcher", "version": "0.1.0"}
-    }
-```
-
-The server-side operates in a similar stateless mode (using `ServerRunner(stateless=True)` internally).
+The server-side runs the SDK's `ServerRunner` with `stateless=True` for the same reason.
 
 ### 2. No Backchannel Support
-Unary gRPC is strictly unidirectional. Because of this, `GRPCClientDispatcher` does not support:
+Unary gRPC is strictly unidirectional. `GRPCClientDispatcher` does not support:
 *   Inbound requests from the server.
-*   Outbound notifications from the client to the server (with the exception of `notifications/initialized` which is silently dropped for compatibility).
+*   Outbound notifications from the client to the server.
 
-Any attempt by the client to send a notification (via `session.send_notification`) raises `NoBackChannelError` immediately.
+Any call to `session.send_notification(...)` raises `NoBackChannelError` immediately. This includes `notifications/initialized` — there is no handshake, so there is nothing to acknowledge.

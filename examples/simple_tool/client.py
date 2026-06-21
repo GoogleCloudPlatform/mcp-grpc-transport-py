@@ -10,9 +10,10 @@ async def main():
     dispatcher = GRPCClientDispatcher(address=address)
 
     print(f"Connecting to MCP gRPC Server at {address}...")
+    # Note: gRPC unary transport does not perform an MCP initialize handshake.
+    # Do not call `session.initialize()` here — methods can be invoked directly.
     async with ClientSession(dispatcher=dispatcher) as session:
-        await session.initialize()
-        print("Connected and initialized.")
+        print("Connected.")
 
         # List tools
         tools = await session.list_tools()

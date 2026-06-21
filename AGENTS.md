@@ -5,9 +5,9 @@ Welcome to the `mcp-grpc-transport-py` project. This file provides generic guide
 ## Project Structure & Guidelines Pointers
 
 This project uses a hierarchical guidelines model. For specific files and packages, consult their local guidelines files:
-*   For the library core source code under `src/`: See [src/mcp_grpc_transport/AGENTS.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/src/mcp_grpc_transport/AGENTS.md)
-*   For writing and executing tests under `tests/`: See [tests/AGENTS.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/tests/AGENTS.md)
-*   For adding or modifying example scripts under `examples/`: See [examples/AGENTS.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/examples/AGENTS.md)
+*   For the library core source code under `src/`: See [src/mcp_grpc_transport/AGENTS.md](src/mcp_grpc_transport/AGENTS.md)
+*   For writing and executing tests under `tests/`: See [tests/AGENTS.md](tests/AGENTS.md)
+*   For adding or modifying example scripts under `examples/`: See [examples/AGENTS.md](examples/AGENTS.md)
 
 ---
 

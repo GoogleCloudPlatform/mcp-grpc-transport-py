@@ -1,241 +1,304 @@
-"""Unit tests for schema conversions."""
+"""Unit tests for the dict <-> protobuf conversion layer.
 
+The converters in `convert.py` work directly on the dict shape that the SDK
+hands the dispatcher (params dicts produced by `model_dump(by_alias=True,
+mode="json", exclude_none=True)`) and that the SDK expects back. These tests
+exercise round-trip fidelity and edge cases without going through Pydantic.
+"""
+
+import pytest
 from google.protobuf import struct_pb2
-from mcp import types as mcp_types
+
 from mcp_grpc_transport import convert
 from mcp_grpc_transport_proto import mcp_messages_pb2
 
 
-def test_dict_struct_conversion():
+# ----------------------------- Struct helpers -----------------------------
+
+def test_dict_struct_round_trip():
     d = {"key": "value", "nested": {"num": 42, "bool": True}}
     struct = convert.dict_to_struct(d)
     assert isinstance(struct, struct_pb2.Struct)
     assert struct.fields["key"].string_value == "value"
     assert struct.fields["nested"].struct_value.fields["num"].number_value == 42.0
-    
-    d2 = convert.struct_to_dict(struct)
-    assert d2 == d
+    assert convert.struct_to_dict(struct) == d
 
 
-def test_tool_conversion():
-    mcp_tool = mcp_types.Tool(
-        name="test_tool",
-        description="A test tool",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "arg1": {"type": "string"}
+def test_dict_to_struct_handles_none():
+    struct = convert.dict_to_struct(None)
+    assert isinstance(struct, struct_pb2.Struct)
+    assert len(struct.fields) == 0
+
+
+# ----------------------------- ListTools -----------------------------
+
+def test_list_tools_result_round_trip():
+    d = {
+        "tools": [
+            {
+                "name": "add",
+                "description": "Add two numbers",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+                    "required": ["a", "b"],
+                },
             },
-            "required": ["arg1"]
-        }
-    )
-    
-    proto_tool = convert.tool_to_proto(mcp_tool)
-    assert isinstance(proto_tool, mcp_messages_pb2.Tool)
-    assert proto_tool.name == "test_tool"
-    assert proto_tool.description == "A test tool"
-    
-    mcp_tool2 = convert.tool_from_proto(proto_tool)
-    assert mcp_tool2.name == mcp_tool.name
-    assert mcp_tool2.description == mcp_tool.description
-    assert mcp_tool2.input_schema == mcp_tool.input_schema
+            {"name": "minimal", "inputSchema": {"type": "object"}},
+        ],
+    }
+    proto = convert.list_tools_result_dict_to_proto(d)
+    assert len(proto.tools) == 2
+    assert proto.tools[0].name == "add"
+    assert proto.tools[0].description == "Add two numbers"
+
+    back = convert.list_tools_result_proto_to_dict(proto)
+    assert back == d
 
 
-def test_list_tools_result_conversion():
-    result = mcp_types.ListToolsResult(
-        tools=[
-            mcp_types.Tool(name="t1", input_schema={"type": "object"}),
-            mcp_types.Tool(name="t2", input_schema={"type": "object"}),
+def test_list_tools_result_includes_output_schema_when_set():
+    d = {
+        "tools": [
+            {
+                "name": "calc",
+                "inputSchema": {"type": "object"},
+                "outputSchema": {"type": "number"},
+            }
         ]
-    )
-    
-    proto_response = convert.list_tools_result_to_proto(result)
-    assert len(proto_response.tools) == 2
-    assert proto_response.tools[0].name == "t1"
-    
-    result2 = convert.list_tools_result_from_proto(proto_response)
-    assert len(result2.tools) == 2
-    assert result2.tools[0].name == "t1"
+    }
+    proto = convert.list_tools_result_dict_to_proto(d)
+    assert proto.tools[0].HasField("output_schema")
+    back = convert.list_tools_result_proto_to_dict(proto)
+    assert back["tools"][0]["outputSchema"] == {"type": "number"}
 
 
-def test_call_tool_params_conversion():
-    params = mcp_types.CallToolRequestParams(
-        name="my_tool",
-        arguments={"arg": "val"}
-    )
-    
-    proto_req = convert.call_tool_params_to_proto(params)
-    assert proto_req.request.name == "my_tool"
-    assert proto_req.request.arguments.fields["arg"].string_value == "val"
-    
-    params2 = convert.call_tool_params_from_proto(proto_req)
-    assert params2.name == "my_tool"
-    assert params2.arguments == {"arg": "val"}
+def test_list_tools_omits_optional_fields_in_dict():
+    """Empty proto string fields must NOT surface in the dict (SDK uses exclude_none)."""
+    proto = mcp_messages_pb2.ListToolsResponse()
+    proto.tools.append(mcp_messages_pb2.Tool(name="t", input_schema=convert.dict_to_struct({"type": "object"})))
+    d = convert.list_tools_result_proto_to_dict(proto)
+    assert d == {"tools": [{"name": "t", "inputSchema": {"type": "object"}}]}
 
 
-def test_call_tool_result_conversion():
-    result = mcp_types.CallToolResult(
-        is_error=False,
-        content=[
-            mcp_types.TextContent(type="text", text="hello"),
-            mcp_types.ImageContent(type="image", data="dGVzdA==", mime_type="image/png"),
+# ----------------------------- CallTool params -----------------------------
+
+def test_call_tool_params_round_trip():
+    d = {"name": "echo", "arguments": {"msg": "hi"}}
+    proto = convert.call_tool_params_dict_to_proto(d)
+    assert proto.request.name == "echo"
+    assert proto.request.HasField("arguments")
+    assert proto.request.arguments.fields["msg"].string_value == "hi"
+
+    back = convert.call_tool_request_proto_to_params_dict(proto)
+    assert back == d
+
+
+def test_call_tool_params_arguments_presence_distinguishes_none_from_empty():
+    """`arguments=None` keeps the proto field unset; `arguments={}` sets it."""
+    proto_none = convert.call_tool_params_dict_to_proto({"name": "x"})  # no arguments
+    assert not proto_none.request.HasField("arguments")
+    assert "arguments" not in convert.call_tool_request_proto_to_params_dict(proto_none)
+
+    proto_empty = convert.call_tool_params_dict_to_proto({"name": "x", "arguments": {}})
+    assert proto_empty.request.HasField("arguments")
+    assert convert.call_tool_request_proto_to_params_dict(proto_empty)["arguments"] == {}
+
+
+def test_call_tool_params_meta_round_trip():
+    d = {"name": "x", "arguments": {"a": 1}, "_meta": {"traceId": "abc"}}
+    proto = convert.call_tool_params_dict_to_proto(d)
+    assert proto.HasField("common")
+    assert proto.common.HasField("metadata")
+
+    back = convert.call_tool_request_proto_to_params_dict(proto)
+    assert back["_meta"] == {"traceId": "abc"}
+    # Numbers in Struct become floats: a=1 -> 1.0 after Struct round-trip.
+    assert back["arguments"] == {"a": 1.0}
+
+
+# ----------------------------- CallTool result -----------------------------
+
+def test_call_tool_result_text_round_trip():
+    d = {"isError": False, "content": [{"type": "text", "text": "hello"}]}
+    proto = convert.call_tool_result_dict_to_proto(d)
+    assert proto.is_error is False
+    assert proto.content[0].text.text == "hello"
+
+    back = convert.call_tool_result_proto_to_dict(proto)
+    assert back == d
+
+
+def test_call_tool_result_image_audio_round_trip():
+    d = {
+        "isError": False,
+        "content": [
+            {"type": "image", "data": "dGVzdA==", "mimeType": "image/png"},
+            {"type": "audio", "data": "dGVzdA==", "mimeType": "audio/wav"},
+        ],
+    }
+    proto = convert.call_tool_result_dict_to_proto(d)
+    assert proto.content[0].image.data == b"dGVzdA=="
+    assert proto.content[0].image.mime_type == "image/png"
+    assert proto.content[1].audio.data == b"dGVzdA=="
+
+    back = convert.call_tool_result_proto_to_dict(proto)
+    assert back == d
+
+
+def test_call_tool_result_embedded_resource_text_round_trip():
+    d = {
+        "isError": False,
+        "content": [
+            {
+                "type": "resource",
+                "resource": {"uri": "x://r", "mimeType": "text/plain", "text": "body"},
+            }
+        ],
+    }
+    proto = convert.call_tool_result_dict_to_proto(d)
+    assert proto.content[0].embedded_resource.contents.text == "body"
+    back = convert.call_tool_result_proto_to_dict(proto)
+    assert back == d
+
+
+def test_call_tool_result_embedded_resource_blob_round_trip():
+    d = {
+        "isError": False,
+        "content": [
+            {
+                "type": "resource",
+                "resource": {"uri": "x://r", "mimeType": "image/png", "blob": "dGVzdA=="},
+            }
+        ],
+    }
+    proto = convert.call_tool_result_dict_to_proto(d)
+    assert proto.content[0].embedded_resource.contents.blob == b"dGVzdA=="
+    back = convert.call_tool_result_proto_to_dict(proto)
+    assert back == d
+
+
+def test_call_tool_result_resource_link_round_trip():
+    d = {
+        "isError": False,
+        "content": [
+            {
+                "type": "resource_link",
+                "uri": "x://link",
+                "name": "l",
+                "title": "Link",
+                "description": "desc",
+                "mimeType": "text/html",
+            }
+        ],
+    }
+    proto = convert.call_tool_result_dict_to_proto(d)
+    assert proto.content[0].resource_link.uri == "x://link"
+
+    back = convert.call_tool_result_proto_to_dict(proto)
+    assert back == d
+
+
+def test_call_tool_result_structured_content_round_trip():
+    d = {
+        "isError": False,
+        "content": [],
+        "structuredContent": {"answer": 42},
+    }
+    proto = convert.call_tool_result_dict_to_proto(d)
+    assert proto.HasField("structured_content")
+
+    back = convert.call_tool_result_proto_to_dict(proto)
+    # Struct turns 42 into 42.0; the comparison should reflect that.
+    assert back["structuredContent"] == {"answer": 42.0}
+    assert back["isError"] is False
+    assert back["content"] == []
+
+
+def test_call_tool_result_unknown_content_type_raises():
+    with pytest.raises(ValueError, match="Unsupported content block type"):
+        convert.call_tool_result_dict_to_proto({"content": [{"type": "alien"}]})
+
+
+def test_content_block_from_proto_raises_on_empty_oneof():
+    empty = mcp_messages_pb2.CallToolResponse.Content()
+    with pytest.raises(ValueError, match="no recognised oneof variant"):
+        convert._content_block_proto_to_dict(empty)
+
+
+# ----------------------------- Resources -----------------------------
+
+def test_list_resources_round_trip():
+    d = {
+        "resources": [
+            {"uri": "x://a", "name": "a", "mimeType": "text/plain", "size": 100},
+            {"uri": "x://b", "name": "b"},  # minimal: only required fields
         ]
-    )
-    
-    proto_res = convert.call_tool_result_to_proto(result)
-    assert proto_res.is_error is False
-    assert len(proto_res.content) == 2
-    assert proto_res.content[0].text.text == "hello"
-    assert proto_res.content[1].image.data == b"dGVzdA=="
-    assert proto_res.content[1].image.mime_type == "image/png"
-    
-    result2 = convert.call_tool_result_from_proto(proto_res)
-    assert result2.is_error is False
-    assert len(result2.content) == 2
-    assert result2.content[0].text == "hello"
-    assert result2.content[1].data == "dGVzdA=="
-    assert result2.content[1].mime_type == "image/png"
+    }
+    proto = convert.list_resources_result_dict_to_proto(d)
+    assert proto.resources[0].size == 100
+    assert proto.resources[1].size == 0
+
+    back = convert.list_resources_result_proto_to_dict(proto)
+    assert back == d
 
 
-def test_resource_conversion():
-    resource = mcp_types.Resource(
-        uri="test://resource",
-        name="r1",
-        description="desc",
-        mime_type="text/plain",
-        size=100
-    )
-    
-    proto = convert.resource_to_proto(resource)
-    assert proto.uri == "test://resource"
-    assert proto.name == "r1"
-    assert proto.description == "desc"
-    assert proto.mime_type == "text/plain"
-    assert proto.size == 100
-    
-    resource2 = convert.resource_from_proto(proto)
-    assert resource2.uri == resource.uri
-    assert resource2.name == resource.name
-    assert resource2.mime_type == resource.mime_type
-    assert resource2.size == resource.size
+def test_resource_omits_unset_optionals_in_dict():
+    """Empty proto strings must not surface in the dict — they round-trip as absent."""
+    proto = mcp_messages_pb2.ListResourcesResponse()
+    proto.resources.append(mcp_messages_pb2.Resource(uri="x://x", name="x"))
+    d = convert.list_resources_result_proto_to_dict(proto)
+    assert d == {"resources": [{"uri": "x://x", "name": "x"}]}
 
 
-def test_resource_contents_conversion():
-    tc = mcp_types.TextResourceContents(
-        uri="test://r1",
-        mime_type="text/plain",
-        text="hello"
-    )
-    proto_tc = convert.resource_contents_to_proto(tc)
-    assert proto_tc.uri == "test://r1"
-    assert proto_tc.text == "hello"
-    assert proto_tc.blob == b""
-    
-    tc2 = convert.resource_contents_from_proto(proto_tc)
-    assert isinstance(tc2, mcp_types.TextResourceContents)
-    assert tc2.text == "hello"
-    
-    bc = mcp_types.BlobResourceContents(
-        uri="test://r2",
-        mime_type="application/octet-stream",
-        blob="dGVzdA=="
-    )
-    proto_bc = convert.resource_contents_to_proto(bc)
-    assert proto_bc.uri == "test://r2"
-    assert proto_bc.text == ""
-    assert proto_bc.blob == b"dGVzdA=="
-    
-    bc2 = convert.resource_contents_from_proto(proto_bc)
-    assert isinstance(bc2, mcp_types.BlobResourceContents)
-    assert bc2.blob == "dGVzdA=="
+# ----------------------------- Resource Templates -----------------------------
 
-
-def test_resource_template_conversion():
-    rt = mcp_types.ResourceTemplate(
-        uri_template="test://{name}",
-        name="t1",
-        description="desc",
-        mime_type="text/plain"
-    )
-    proto = convert.resource_template_to_proto(rt)
-    assert proto.uri_template == "test://{name}"
-    assert proto.name == "t1"
-    assert proto.description == "desc"
-    assert proto.mime_type == "text/plain"
-    
-    rt2 = convert.resource_template_from_proto(proto)
-    assert rt2.uri_template == rt.uri_template
-    assert rt2.name == rt.name
-    assert rt2.mime_type == rt.mime_type
-
-
-def test_list_resource_templates_result_conversion():
-    result = mcp_types.ListResourceTemplatesResult(
-        resource_templates=[
-            mcp_types.ResourceTemplate(uri_template="t1", name="n1"),
-            mcp_types.ResourceTemplate(uri_template="t2", name="n2"),
+def test_list_resource_templates_round_trip():
+    d = {
+        "resourceTemplates": [
+            {"uriTemplate": "x://{n}", "name": "t", "mimeType": "text/plain"},
+            {"uriTemplate": "y://{n}", "name": "u"},
         ]
-    )
-    proto = convert.list_resource_templates_result_to_proto(result)
-    assert len(proto.resource_templates) == 2
-    assert proto.resource_templates[0].name == "n1"
-    
-    result2 = convert.list_resource_templates_result_from_proto(proto)
-    assert len(result2.resource_templates) == 2
-    assert result2.resource_templates[0].name == "n1"
+    }
+    proto = convert.list_resource_templates_result_dict_to_proto(d)
+    assert proto.resource_templates[0].uri_template == "x://{n}"
+
+    back = convert.list_resource_templates_result_proto_to_dict(proto)
+    assert back == d
 
 
-def test_read_resource_result_conversion():
-    result = mcp_types.ReadResourceResult(
-        contents=[
-            mcp_types.TextResourceContents(uri="test://r1", text="t1"),
-        ]
-    )
-    proto = convert.read_resource_result_to_proto(result)
-    assert len(proto.resource) == 1
-    assert proto.resource[0].text == "t1"
-    
-    result2 = convert.read_resource_result_from_proto(proto)
-    assert len(result2.contents) == 1
-    assert result2.contents[0].text == "t1"
+# ----------------------------- ReadResource -----------------------------
+
+def test_read_resource_params_round_trip():
+    d = {"uri": "x://r"}
+    proto = convert.read_resource_params_dict_to_proto(d)
+    assert proto.uri == "x://r"
+
+    back = convert.read_resource_request_proto_to_params_dict(proto)
+    assert back == d
 
 
-def test_resource_contents_invalid_type():
-    import pytest
-    with pytest.raises(ValueError, match="Invalid resource contents type"):
-        convert.resource_contents_to_proto("not a resource contents object")
+def test_read_resource_params_meta_round_trip():
+    d = {"uri": "x://r", "_meta": {"trace": "t"}}
+    proto = convert.read_resource_params_dict_to_proto(d)
+    assert proto.common.HasField("metadata")
+    back = convert.read_resource_request_proto_to_params_dict(proto)
+    assert back == d
 
 
-def test_content_block_audio_and_link_conversion():
-    # Test AudioContent
-    audio = mcp_types.AudioContent(type="audio", data="dGVzdA==", mime_type="audio/wav")
-    proto_audio = convert._content_block_to_proto(audio)
-    assert proto_audio.HasField("audio")
-    assert proto_audio.audio.data == b"dGVzdA=="
-    assert proto_audio.audio.mime_type == "audio/wav"
-    
-    audio2 = convert._content_block_from_proto(proto_audio)
-    assert isinstance(audio2, mcp_types.AudioContent)
-    assert audio2.data == "dGVzdA=="
-    assert audio2.mime_type == "audio/wav"
-    
-    # Test ResourceLink
-    link = mcp_types.ResourceLink(
-        type="resource_link",
-        uri="test://link",
-        name="l1",
-        title="t1",
-        description="d1",
-        mime_type="text/html"
-    )
-    proto_link = convert._content_block_to_proto(link)
-    assert proto_link.HasField("resource_link")
-    assert proto_link.resource_link.uri == "test://link"
-    assert proto_link.resource_link.name == "l1"
-    
-    link2 = convert._content_block_from_proto(proto_link)
-    assert isinstance(link2, mcp_types.ResourceLink)
-    assert link2.uri == "test://link"
-    assert link2.name == "l1"
-    assert link2.title == "t1"
+def test_read_resource_result_text_round_trip():
+    d = {"contents": [{"uri": "x://r", "mimeType": "text/plain", "text": "hi"}]}
+    proto = convert.read_resource_result_dict_to_proto(d)
+    assert proto.resource[0].text == "hi"
+    assert proto.resource[0].blob == b""
 
+    back = convert.read_resource_result_proto_to_dict(proto)
+    assert back == d
+
+
+def test_read_resource_result_blob_round_trip():
+    d = {"contents": [{"uri": "x://r", "mimeType": "application/octet-stream", "blob": "dGVzdA=="}]}
+    proto = convert.read_resource_result_dict_to_proto(d)
+    assert proto.resource[0].blob == b"dGVzdA=="
+
+    back = convert.read_resource_result_proto_to_dict(proto)
+    assert back == d

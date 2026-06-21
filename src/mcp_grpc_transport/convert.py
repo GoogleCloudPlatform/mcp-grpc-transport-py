@@ -1,8 +1,14 @@
-"""Pure translation functions between MCP types/dicts and Protobuf messages.
+"""Pure translation between MCP dict payloads and Protobuf messages.
 
-This module maps between python-sdk V2 snake_case model attributes and generated
-Protobuf snake_case message fields, performing bytes-to-string encoding (like image/audio base64)
-and structural conversions.
+The MCP SDK dispatcher contract is dict-in, dict-out: `send_raw_request`
+receives params as a dict (the result of `model_dump(by_alias=True,
+mode="json", exclude_none=True)`) and returns a dict that the SDK then
+validates against its result Pydantic. Building Pydantic intermediates on
+our side just to re-dump them is wasted work, so the routines below operate
+on dicts directly.
+
+Field keys follow the SDK's JSON wire aliases (camelCase), matching what
+the SDK produces and accepts (`model_validate(..., by_name=False)`).
 """
 
 import logging
@@ -10,21 +16,20 @@ from typing import Any, Sequence
 
 from google.protobuf import json_format
 from google.protobuf import struct_pb2
-from mcp import types as mcp_types
-from mcp.server.lowlevel import helper_types as mcp_helper_types
 
 from mcp_grpc_transport_proto import mcp_messages_pb2
 
 logger = logging.getLogger(__name__)
 
 
-# Struct helper
+# ============================== Struct helpers ==============================
+
 def dict_to_struct(d: dict[str, Any] | None) -> struct_pb2.Struct:
-    """Converts a dictionary to a Protobuf Struct message.
-    
-    NOTE: Protobuf Struct stores all numbers as float64 (double). When converting 
-    dict -> Struct -> dict, any Python integers will be deserialized as floats (e.g. 5 becomes 5.0).
-    Handlers expecting strict integer types must explicitly cast them.
+    """Convert a dictionary to a Protobuf Struct message.
+
+    NOTE: Protobuf `Struct` stores all numbers as float64. Round-tripping a
+    Python int through Struct yields a float (e.g. 5 → 5.0). Handlers that
+    require strict ints must cast explicitly.
     """
     struct = struct_pb2.Struct()
     if d:
@@ -37,7 +42,7 @@ def dict_to_struct(d: dict[str, Any] | None) -> struct_pb2.Struct:
 
 
 def struct_to_dict(struct: struct_pb2.Struct) -> dict[str, Any]:
-    """Converts a Protobuf Struct message to a dictionary."""
+    """Convert a Protobuf Struct message to a dictionary."""
     try:
         return json_format.MessageToDict(struct)
     except json_format.ParseError:
@@ -45,457 +50,389 @@ def struct_to_dict(struct: struct_pb2.Struct) -> dict[str, Any]:
         raise
 
 
-# Resources
-def list_resources_result_from_proto(
-    list_resources_response_proto: mcp_messages_pb2.ListResourcesResponse,
-) -> mcp_types.ListResourcesResult:
-    """Converts ListResourcesResponse proto to MCP ListResourcesResult object."""
-    return mcp_types.ListResourcesResult(
-        resources=[
-            resource_from_proto(resource)
-            for resource in list_resources_response_proto.resources
-        ]
+# ============================== Common / _meta ==============================
+
+def _set_common_meta(
+    proto_with_common: Any,
+    params: dict[str, Any] | None,
+) -> None:
+    """If `_meta` is present in params, populate `proto.common.metadata`."""
+    if not params:
+        return
+    meta = params.get("_meta")
+    if meta is None:
+        return
+    proto_with_common.common.metadata.CopyFrom(dict_to_struct(meta))
+
+
+def _extract_meta(proto_with_common: Any) -> dict[str, Any] | None:
+    """Pull `_meta` (camelCase contract: leading underscore is preserved) from `proto.common.metadata`."""
+    if not proto_with_common.HasField("common"):
+        return None
+    if not proto_with_common.common.HasField("metadata"):
+        return None
+    return struct_to_dict(proto_with_common.common.metadata)
+
+
+def _empty_response_common() -> mcp_messages_pb2.ResponseFields:
+    return mcp_messages_pb2.ResponseFields()
+
+
+# ============================== Tools ==============================
+
+def _tool_dict_to_proto(d: dict[str, Any]) -> mcp_messages_pb2.Tool:
+    proto = mcp_messages_pb2.Tool(
+        name=d.get("name", ""),
+        title=d.get("title") or "",
+        description=d.get("description") or "",
+        input_schema=dict_to_struct(d.get("inputSchema") or {}),
     )
+    output_schema = d.get("outputSchema")
+    if output_schema is not None:
+        proto.output_schema.CopyFrom(dict_to_struct(output_schema))
+    return proto
 
 
-def resource_from_proto(
-    proto: mcp_messages_pb2.Resource,
-) -> mcp_types.Resource:
-    """Converts a Protobuf Resource message to a MCP Resource type."""
-    return mcp_types.Resource(
-        uri=proto.uri,
-        name=proto.name,
-        title=proto.title if proto.title else None,
-        description=proto.description if proto.description else None,
-        mime_type=proto.mime_type if proto.mime_type else None,
-        size=proto.size if proto.size != 0 else None,
-    )
+def _tool_proto_to_dict(proto: mcp_messages_pb2.Tool) -> dict[str, Any]:
+    d: dict[str, Any] = {
+        "name": proto.name,
+        "inputSchema": struct_to_dict(proto.input_schema),
+    }
+    if proto.title:
+        d["title"] = proto.title
+    if proto.description:
+        d["description"] = proto.description
+    if proto.HasField("output_schema"):
+        d["outputSchema"] = struct_to_dict(proto.output_schema)
+    return d
 
 
-def resource_to_proto(
-    resource: mcp_types.Resource
-) -> mcp_messages_pb2.Resource:
-    """Converts a MCP Resource type to a Protobuf Resource message."""
-    return mcp_messages_pb2.Resource(
-        uri=str(resource.uri),
-        name=resource.name,
-        title=resource.title,
-        description=resource.description,
-        mime_type=resource.mime_type,
-        size=resource.size,
-    )
-
-
-def list_resources_result_to_proto(
-    result: mcp_types.ListResourcesResult,
-) -> mcp_messages_pb2.ListResourcesResponse:
-    """Converts ListResourcesResult to ListResourcesResponse proto message."""
-    return mcp_messages_pb2.ListResourcesResponse(
-        common=mcp_messages_pb2.ResponseFields(),
-        resources=[resource_to_proto(resource) for resource in result.resources],
-    )
-
-
-# Resource Templates
-def list_resource_templates_result_from_proto(
-    list_res_templates_resp_proto: mcp_messages_pb2.ListResourceTemplatesResponse,
-) -> mcp_types.ListResourceTemplatesResult:
-    """Converts ListResourceTemplatesResponse proto to equivalent MCP object."""
-    return mcp_types.ListResourceTemplatesResult(
-        resource_templates=[
-            resource_template_from_proto(resource_template)
-            for resource_template in (
-                list_res_templates_resp_proto.resource_templates
-            )
-        ]
-    )
-
-
-def resource_template_from_proto(
-    proto: mcp_messages_pb2.ResourceTemplate,
-) -> mcp_types.ResourceTemplate:
-    """Converts a ResourceTemplate proto message to MCP ResourceTemplate type."""
-    return mcp_types.ResourceTemplate(
-        uri_template=proto.uri_template,
-        name=proto.name,
-        title=proto.title if proto.title else None,
-        description=proto.description if proto.description else None,
-        mime_type=proto.mime_type if proto.mime_type else None,
-    )
-
-
-def resource_template_to_proto(
-    resource_template: mcp_types.ResourceTemplate
-) -> mcp_messages_pb2.ResourceTemplate:
-    """Converts a MCP ResourceTemplate type to Protobuf ResourceTemplate message."""
-    return mcp_messages_pb2.ResourceTemplate(
-        uri_template=str(resource_template.uri_template),
-        name=resource_template.name,
-        title=resource_template.title,
-        description=resource_template.description,
-        mime_type=resource_template.mime_type,
-    )
-
-
-def list_resource_templates_result_to_proto(
-    result: mcp_types.ListResourceTemplatesResult,
-) -> mcp_messages_pb2.ListResourceTemplatesResponse:
-    """Converts ListResourceTemplatesResult to ListResourceTemplatesResponse proto message."""
-    return mcp_messages_pb2.ListResourceTemplatesResponse(
-        common=mcp_messages_pb2.ResponseFields(),
-        resource_templates=[
-            resource_template_to_proto(rt) for rt in result.resource_templates
-        ],
-    )
-
-
-# Resource Contents
-def read_resource_request_params_from_proto(
-    request: mcp_messages_pb2.ReadResourceRequest,
-) -> mcp_types.ReadResourceRequestParams:
-    """Converts ReadResourceRequest proto to a ReadResourceRequestParams object."""
-    return mcp_types.ReadResourceRequestParams(
-        uri=request.uri,
-    )
-
-
-def read_resource_request_params_to_proto(
-    request: mcp_types.ReadResourceRequestParams,
-) -> mcp_messages_pb2.ReadResourceRequest:
-    """Converts ReadResourceRequestParams object to ReadResourceRequest proto."""
-    return mcp_messages_pb2.ReadResourceRequest(
-        uri=str(request.uri),
-    )
-
-
-def read_resource_result_from_proto(
-    response: mcp_messages_pb2.ReadResourceResponse,
-) -> mcp_types.ReadResourceResult:
-    """Converts ReadResourceResponse proto to a ReadResourceResult object."""
-    return mcp_types.ReadResourceResult(
-        contents=[
-            resource_contents_from_proto(resource_contents)
-            for resource_contents in response.resource
-        ]
-    )
-
-
-def resource_contents_from_proto(
-    contents: mcp_messages_pb2.ResourceContents,
-) -> mcp_types.TextResourceContents | mcp_types.BlobResourceContents:
-    """Converts ResourceContents proto to text/blob ResourceContents object."""
-    if contents.blob:
-        return mcp_types.BlobResourceContents(
-            uri=contents.uri,
-            mime_type=contents.mime_type if contents.mime_type else None,
-            blob=contents.blob.decode(),
-        )
-    return mcp_types.TextResourceContents(
-        uri=contents.uri,
-        mime_type=contents.mime_type if contents.mime_type else None,
-        text=contents.text,
-    )
-
-
-def resource_contents_to_proto(
-    resource_contents: mcp_types.TextResourceContents | mcp_types.BlobResourceContents
-) -> mcp_messages_pb2.ResourceContents:
-    """Converts a MCP Text/Blob ResourceContents type to ResourceContents proto message."""
-    if isinstance(resource_contents, mcp_types.TextResourceContents):
-        return mcp_messages_pb2.ResourceContents(
-            uri=str(resource_contents.uri),
-            mime_type=resource_contents.mime_type or "",
-            text=resource_contents.text,
-            blob=b"",
-        )
-    elif isinstance(resource_contents, mcp_types.BlobResourceContents):
-        return mcp_messages_pb2.ResourceContents(
-            uri=str(resource_contents.uri),
-            mime_type=resource_contents.mime_type or "",
-            text="",
-            blob=resource_contents.blob.encode(),
-        )
-    raise ValueError(f"Invalid resource contents type: {type(resource_contents)}")
-
-
-def read_resource_result_to_proto(
-    result: mcp_types.ReadResourceResult,
-) -> mcp_messages_pb2.ReadResourceResponse:
-    """Converts ReadResourceResult to ReadResourceResponse proto message."""
-    return mcp_messages_pb2.ReadResourceResponse(
-        common=mcp_messages_pb2.ResponseFields(),
-        resource=[resource_contents_to_proto(c) for c in result.contents],
-    )
-
-
-# Tools
-def list_tools_result_from_proto(
-    list_tools_response_proto: mcp_messages_pb2.ListToolsResponse,
-) -> mcp_types.ListToolsResult:
-    """Converts a Protobuf ListToolsResponse message to a MCP ListToolsResult type."""
-    return mcp_types.ListToolsResult(
-        tools=[tool_from_proto(tool) for tool in list_tools_response_proto.tools]
-    )
-
-
-def tool_from_proto(tool: mcp_messages_pb2.Tool) -> mcp_types.Tool:
-    """Converts a Protobuf Tool message to a MCP Tool type."""
-    input_schema = struct_to_dict(tool.input_schema)
-    output_schema = None
-    if tool.HasField("output_schema"):
-        output_schema = struct_to_dict(tool.output_schema)
-
-    return mcp_types.Tool(
-        name=tool.name,
-        title=tool.title if tool.title else None,
-        description=tool.description if tool.description else None,
-        input_schema=input_schema,
-        output_schema=output_schema,
-    )
-
-
-def tool_to_proto(tool: mcp_types.Tool) -> mcp_messages_pb2.Tool:
-    """Converts a MCP Tool type to a Protobuf Tool message."""
-    input_schema = dict_to_struct(tool.input_schema)
-    output_schema = None
-    if tool.output_schema is not None:
-        output_schema = dict_to_struct(tool.output_schema)
-
-    return mcp_messages_pb2.Tool(
-        name=tool.name,
-        title=tool.title or "",
-        description=tool.description or "",
-        input_schema=input_schema,
-        output_schema=output_schema,
-    )
-
-
-def list_tools_result_to_proto(
-    result: mcp_types.ListToolsResult,
+def list_tools_result_dict_to_proto(
+    result: dict[str, Any],
 ) -> mcp_messages_pb2.ListToolsResponse:
-    """Converts ListToolsResult to ListToolsResponse proto message."""
+    """Build a ListToolsResponse from the SDK's dumped ListToolsResult dict."""
+    tools = result.get("tools") or []
     return mcp_messages_pb2.ListToolsResponse(
-        common=mcp_messages_pb2.ResponseFields(),
-        tools=[tool_to_proto(tool) for tool in result.tools],
+        common=_empty_response_common(),
+        tools=[_tool_dict_to_proto(t) for t in tools],
     )
 
 
-# CallTool Params
-def call_tool_params_from_proto(
-    request: mcp_messages_pb2.CallToolRequest,
-) -> mcp_types.CallToolRequestParams:
-    """Extracts CallToolRequestParams from a CallToolRequest proto message."""
-    arguments = None
-    if request.request.HasField("arguments"):
-        arguments = struct_to_dict(request.request.arguments)
-
-    return mcp_types.CallToolRequestParams(
-        name=request.request.name,
-        arguments=arguments,
-    )
+def list_tools_result_proto_to_dict(
+    proto: mcp_messages_pb2.ListToolsResponse,
+) -> dict[str, Any]:
+    """Convert a ListToolsResponse to the dict the SDK will validate."""
+    return {"tools": [_tool_proto_to_dict(t) for t in proto.tools]}
 
 
-def call_tool_params_to_proto(
-    call_tool_params: mcp_types.CallToolRequestParams,
+# ============================== CallTool params ==============================
+
+def call_tool_params_dict_to_proto(
+    params: dict[str, Any],
 ) -> mcp_messages_pb2.CallToolRequest:
-    """Converts a CallToolRequestParams object to a CallToolRequest proto message."""
-    arguments = (
-        dict_to_struct(call_tool_params.arguments)
-        if call_tool_params.arguments is not None
-        else struct_pb2.Struct()
-    )
-    return mcp_messages_pb2.CallToolRequest(
-        request=mcp_messages_pb2.CallToolRequest.Request(
-            name=call_tool_params.name,
-            arguments=arguments,
-        ),
-    )
+    """Build a CallToolRequest directly from the SDK's params dict.
+
+    Skips Pydantic validation: the SDK has already validated the params
+    on its side before handing them to the dispatcher.
+    """
+    request = mcp_messages_pb2.CallToolRequest.Request(name=params.get("name", ""))
+    arguments = params.get("arguments")
+    # Preserve presence: `arguments=None` stays unset so the server can tell
+    # "no arguments" apart from "empty arguments".
+    if arguments is not None:
+        request.arguments.CopyFrom(dict_to_struct(arguments))
+    proto = mcp_messages_pb2.CallToolRequest(request=request)
+    _set_common_meta(proto, params)
+    return proto
 
 
-# CallTool Content Blocks
-def _content_block_from_proto(
-    content_proto: mcp_messages_pb2.CallToolResponse.Content,
-) -> mcp_types.ContentBlock | None:
-    """Converts a CallToolResponse.Content Proto message to a MCP type ContentBlock."""
-    if content_proto.HasField("text"):
-        return mcp_types.TextContent(
-            type="text",
-            text=content_proto.text.text,
-        )
-
-    if content_proto.HasField("image"):
-        return mcp_types.ImageContent(
-            type="image",
-            data=content_proto.image.data.decode(),
-            mime_type=content_proto.image.mime_type,
-        )
-
-    if content_proto.HasField("audio"):
-        return mcp_types.AudioContent(
-            type="audio",
-            data=content_proto.audio.data.decode(),
-            mime_type=content_proto.audio.mime_type,
-        )
-
-    if content_proto.HasField("embedded_resource"):
-        resource = content_proto.embedded_resource.contents
-        if resource.text:
-            resource_contents = mcp_types.TextResourceContents(
-                uri=resource.uri,
-                mime_type=resource.mime_type if resource.mime_type else None,
-                text=resource.text,
-            )
-        else:
-            resource_contents = mcp_types.BlobResourceContents(
-                uri=resource.uri,
-                mime_type=resource.mime_type if resource.mime_type else None,
-                blob=resource.blob.decode(),
-            )
-        return mcp_types.EmbeddedResource(
-            type="resource",
-            resource=resource_contents,
-        )
-
-    if content_proto.HasField("resource_link"):
-        resource = content_proto.resource_link
-        return mcp_types.ResourceLink(
-            type="resource_link",
-            uri=resource.uri,
-            name=resource.name,
-            title=resource.title if resource.title else None,
-            description=resource.description if resource.description else None,
-            mime_type=resource.mime_type if resource.mime_type else None,
-        )
-
-    return None
+def call_tool_request_proto_to_params_dict(
+    request: mcp_messages_pb2.CallToolRequest,
+) -> dict[str, Any]:
+    """Convert a CallToolRequest proto into the SDK's params dict shape."""
+    result: dict[str, Any] = {"name": request.request.name}
+    if request.request.HasField("arguments"):
+        result["arguments"] = struct_to_dict(request.request.arguments)
+    meta = _extract_meta(request)
+    if meta is not None:
+        result["_meta"] = meta
+    return result
 
 
-def _content_block_to_proto(
-    content_block: mcp_types.ContentBlock,
-) -> mcp_messages_pb2.CallToolResponse.Content | None:
-    """Converts a MCP type ContentBlock to a CallToolResponse.Content Proto message."""
-    if isinstance(content_block, mcp_types.TextContent):
+# ============================== CallTool content blocks ==============================
+
+def _content_block_dict_to_proto(
+    block: dict[str, Any],
+) -> mcp_messages_pb2.CallToolResponse.Content:
+    """Convert a single SDK content-block dict to a proto Content message."""
+    block_type = block.get("type")
+    if block_type == "text":
         return mcp_messages_pb2.CallToolResponse.Content(
-            text=mcp_messages_pb2.TextContent(text=content_block.text)
+            text=mcp_messages_pb2.TextContent(text=block.get("text", "")),
         )
-
-    elif isinstance(content_block, mcp_types.ImageContent):
+    if block_type == "image":
         return mcp_messages_pb2.CallToolResponse.Content(
             image=mcp_messages_pb2.ImageContent(
-                data=content_block.data.encode(),
-                mime_type=content_block.mime_type,
-            )
+                data=block.get("data", "").encode(),
+                mime_type=block.get("mimeType") or "",
+            ),
         )
-
-    elif isinstance(content_block, mcp_types.AudioContent):
+    if block_type == "audio":
         return mcp_messages_pb2.CallToolResponse.Content(
             audio=mcp_messages_pb2.AudioContent(
-                data=content_block.data.encode(),
-                mime_type=content_block.mime_type,
-            )
+                data=block.get("data", "").encode(),
+                mime_type=block.get("mimeType") or "",
+            ),
         )
-
-    elif isinstance(content_block, mcp_types.EmbeddedResource):
-        resource_contents = content_block.resource
-        if isinstance(resource_contents, mcp_types.TextResourceContents):
-            text, blob = resource_contents.text, b""
-        elif isinstance(resource_contents, mcp_types.BlobResourceContents):
-            text, blob = "", resource_contents.blob.encode()
-        else:
-            text, blob = "", b""
-
-        embedded_resource_contents = mcp_messages_pb2.ResourceContents(
-            uri=str(resource_contents.uri),
-            mime_type=resource_contents.mime_type or "",
-            text=text,
-            blob=blob,
-        )
+    if block_type == "resource":
+        resource = block.get("resource") or {}
+        text = resource.get("text") or ""
+        blob_str = resource.get("blob") or ""
         return mcp_messages_pb2.CallToolResponse.Content(
             embedded_resource=mcp_messages_pb2.EmbeddedResource(
-                contents=embedded_resource_contents
-            )
+                contents=mcp_messages_pb2.ResourceContents(
+                    uri=str(resource.get("uri", "")),
+                    mime_type=resource.get("mimeType") or "",
+                    text=text,
+                    blob=blob_str.encode() if blob_str else b"",
+                ),
+            ),
         )
-
-    elif isinstance(content_block, mcp_types.ResourceLink):
+    if block_type == "resource_link":
         return mcp_messages_pb2.CallToolResponse.Content(
             resource_link=mcp_messages_pb2.Resource(
-                uri=str(content_block.uri),
-                name=content_block.name or "",
-                title=content_block.title or "",
-                description=content_block.description or "",
-                mime_type=content_block.mime_type or "",
-            )
+                uri=str(block.get("uri", "")),
+                name=block.get("name") or "",
+                title=block.get("title") or "",
+                description=block.get("description") or "",
+                mime_type=block.get("mimeType") or "",
+            ),
         )
+    raise ValueError(f"Unsupported content block type: {block_type!r}")
 
-    return None
 
+def _content_block_proto_to_dict(
+    proto: mcp_messages_pb2.CallToolResponse.Content,
+) -> dict[str, Any]:
+    """Convert a proto Content message to the SDK's content-block dict."""
+    if proto.HasField("text"):
+        return {"type": "text", "text": proto.text.text}
 
-def _unstructured_tool_content_from_proto(
-    response_contents: Sequence[mcp_messages_pb2.CallToolResponse.Content],
-) -> list[mcp_types.ContentBlock]:
-    """Converts a list of CallToolResponse.Content protos to a list of ContentBlock objects."""
-    if not response_contents:
-        return []
+    if proto.HasField("image"):
+        out: dict[str, Any] = {"type": "image", "data": proto.image.data.decode()}
+        if proto.image.mime_type:
+            out["mimeType"] = proto.image.mime_type
+        return out
 
-    contents: list[mcp_types.ContentBlock] = []
-    for content_proto in response_contents:
-        content_item = _content_block_from_proto(content_proto)
-        if content_item is not None:
-            contents.append(content_item)
+    if proto.HasField("audio"):
+        out = {"type": "audio", "data": proto.audio.data.decode()}
+        if proto.audio.mime_type:
+            out["mimeType"] = proto.audio.mime_type
+        return out
+
+    if proto.HasField("embedded_resource"):
+        contents = proto.embedded_resource.contents
+        resource: dict[str, Any] = {"uri": contents.uri}
+        if contents.mime_type:
+            resource["mimeType"] = contents.mime_type
+        if contents.blob:
+            resource["blob"] = contents.blob.decode()
         else:
-            logger.error("Found an invalid content proto: %s", content_proto)
-    return contents
+            resource["text"] = contents.text
+        return {"type": "resource", "resource": resource}
+
+    if proto.HasField("resource_link"):
+        link = proto.resource_link
+        out = {"type": "resource_link", "uri": link.uri, "name": link.name}
+        if link.title:
+            out["title"] = link.title
+        if link.description:
+            out["description"] = link.description
+        if link.mime_type:
+            out["mimeType"] = link.mime_type
+        return out
+
+    raise ValueError("CallToolResponse.Content has no recognised oneof variant set")
 
 
-def _unstructured_tool_content_to_proto(
-    tool_output: Sequence[mcp_types.ContentBlock],
-) -> list[mcp_messages_pb2.CallToolResponse.Content]:
-    """Converts unstructured tool output to a list of CallToolResponse.Content protos."""
-    if not tool_output:
-        return []
+# ============================== CallTool result ==============================
 
-    contents: list[mcp_messages_pb2.CallToolResponse.Content] = []
-    for content_block in tool_output:
-        content_item = _content_block_to_proto(content_block)
-        if content_item is not None:
-            contents.append(content_item)
-        else:
-            logger.error("Item is not a valid content block: %s", content_block)
-    return contents
-
-
-# CallTool Result
-def call_tool_result_from_proto(
-    response: mcp_messages_pb2.CallToolResponse,
-) -> mcp_types.CallToolResult:
-    """Converts a CallToolResponse proto message to a CallToolResult object."""
-    contents = _unstructured_tool_content_from_proto(response.content)
-    call_tool_result = mcp_types.CallToolResult(
-        is_error=response.is_error,
-        content=contents,
-    )
-
-    if response.HasField("structured_content"):
-        structured_content = struct_to_dict(response.structured_content)
-        call_tool_result.structured_content = structured_content
-
-    return call_tool_result
-
-
-def call_tool_result_to_proto(
-    result: mcp_types.CallToolResult,
+def call_tool_result_dict_to_proto(
+    result: dict[str, Any],
 ) -> mcp_messages_pb2.CallToolResponse:
-    """Converts the mcp_types.CallToolResult object to a CallToolResponse Proto message."""
-    call_tool_response = mcp_messages_pb2.CallToolResponse(
-        common=mcp_messages_pb2.ResponseFields(),
-        is_error=result.is_error,
+    """Convert the SDK's CallToolResult dict to a CallToolResponse proto."""
+    response = mcp_messages_pb2.CallToolResponse(
+        common=_empty_response_common(),
+        is_error=bool(result.get("isError", False)),
+    )
+    for block in result.get("content") or []:
+        response.content.append(_content_block_dict_to_proto(block))
+    structured = result.get("structuredContent")
+    if structured is not None:
+        response.structured_content.CopyFrom(dict_to_struct(structured))
+    return response
+
+
+def call_tool_result_proto_to_dict(
+    proto: mcp_messages_pb2.CallToolResponse,
+) -> dict[str, Any]:
+    """Convert a CallToolResponse proto to the dict shape the SDK validates."""
+    result: dict[str, Any] = {
+        "isError": proto.is_error,
+        "content": [_content_block_proto_to_dict(c) for c in proto.content],
+    }
+    if proto.HasField("structured_content"):
+        result["structuredContent"] = struct_to_dict(proto.structured_content)
+    return result
+
+
+# ============================== Resources ==============================
+
+def _resource_dict_to_proto(d: dict[str, Any]) -> mcp_messages_pb2.Resource:
+    return mcp_messages_pb2.Resource(
+        uri=str(d.get("uri", "")),
+        name=d.get("name", ""),
+        title=d.get("title") or "",
+        description=d.get("description") or "",
+        mime_type=d.get("mimeType") or "",
+        size=d.get("size") or 0,
     )
 
-    proto_contents = _unstructured_tool_content_to_proto(result.content)
-    call_tool_response.content.extend(proto_contents)
 
-    if result.structured_content is not None:
-        structured_content_proto = dict_to_struct(result.structured_content)
-        call_tool_response.structured_content = structured_content_proto
+def _resource_proto_to_dict(proto: mcp_messages_pb2.Resource) -> dict[str, Any]:
+    out: dict[str, Any] = {"uri": proto.uri, "name": proto.name}
+    if proto.title:
+        out["title"] = proto.title
+    if proto.description:
+        out["description"] = proto.description
+    if proto.mime_type:
+        out["mimeType"] = proto.mime_type
+    if proto.size:
+        out["size"] = proto.size
+    return out
 
-    return call_tool_response
+
+def list_resources_result_dict_to_proto(
+    result: dict[str, Any],
+) -> mcp_messages_pb2.ListResourcesResponse:
+    resources = result.get("resources") or []
+    return mcp_messages_pb2.ListResourcesResponse(
+        common=_empty_response_common(),
+        resources=[_resource_dict_to_proto(r) for r in resources],
+    )
+
+
+def list_resources_result_proto_to_dict(
+    proto: mcp_messages_pb2.ListResourcesResponse,
+) -> dict[str, Any]:
+    return {"resources": [_resource_proto_to_dict(r) for r in proto.resources]}
+
+
+# ============================== Resource Templates ==============================
+
+def _resource_template_dict_to_proto(
+    d: dict[str, Any],
+) -> mcp_messages_pb2.ResourceTemplate:
+    return mcp_messages_pb2.ResourceTemplate(
+        uri_template=str(d.get("uriTemplate", "")),
+        name=d.get("name", ""),
+        title=d.get("title") or "",
+        description=d.get("description") or "",
+        mime_type=d.get("mimeType") or "",
+    )
+
+
+def _resource_template_proto_to_dict(
+    proto: mcp_messages_pb2.ResourceTemplate,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {"uriTemplate": proto.uri_template, "name": proto.name}
+    if proto.title:
+        out["title"] = proto.title
+    if proto.description:
+        out["description"] = proto.description
+    if proto.mime_type:
+        out["mimeType"] = proto.mime_type
+    return out
+
+
+def list_resource_templates_result_dict_to_proto(
+    result: dict[str, Any],
+) -> mcp_messages_pb2.ListResourceTemplatesResponse:
+    templates = result.get("resourceTemplates") or []
+    return mcp_messages_pb2.ListResourceTemplatesResponse(
+        common=_empty_response_common(),
+        resource_templates=[_resource_template_dict_to_proto(t) for t in templates],
+    )
+
+
+def list_resource_templates_result_proto_to_dict(
+    proto: mcp_messages_pb2.ListResourceTemplatesResponse,
+) -> dict[str, Any]:
+    return {
+        "resourceTemplates": [
+            _resource_template_proto_to_dict(t) for t in proto.resource_templates
+        ],
+    }
+
+
+# ============================== ReadResource ==============================
+
+def read_resource_params_dict_to_proto(
+    params: dict[str, Any],
+) -> mcp_messages_pb2.ReadResourceRequest:
+    proto = mcp_messages_pb2.ReadResourceRequest(uri=str(params.get("uri", "")))
+    _set_common_meta(proto, params)
+    return proto
+
+
+def read_resource_request_proto_to_params_dict(
+    request: mcp_messages_pb2.ReadResourceRequest,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {"uri": request.uri}
+    meta = _extract_meta(request)
+    if meta is not None:
+        result["_meta"] = meta
+    return result
+
+
+def _resource_contents_dict_to_proto(
+    d: dict[str, Any],
+) -> mcp_messages_pb2.ResourceContents:
+    text = d.get("text") or ""
+    blob = d.get("blob") or ""
+    return mcp_messages_pb2.ResourceContents(
+        uri=str(d.get("uri", "")),
+        mime_type=d.get("mimeType") or "",
+        text=text,
+        blob=blob.encode() if blob else b"",
+    )
+
+
+def _resource_contents_proto_to_dict(
+    proto: mcp_messages_pb2.ResourceContents,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {"uri": proto.uri}
+    if proto.mime_type:
+        out["mimeType"] = proto.mime_type
+    # Proto encodes the variant via the (mutually exclusive) `blob` vs `text` fields.
+    if proto.blob:
+        out["blob"] = proto.blob.decode()
+    else:
+        out["text"] = proto.text
+    return out
+
+
+def read_resource_result_dict_to_proto(
+    result: dict[str, Any],
+) -> mcp_messages_pb2.ReadResourceResponse:
+    contents = result.get("contents") or []
+    return mcp_messages_pb2.ReadResourceResponse(
+        common=_empty_response_common(),
+        resource=[_resource_contents_dict_to_proto(c) for c in contents],
+    )
+
+
+def read_resource_result_proto_to_dict(
+    proto: mcp_messages_pb2.ReadResourceResponse,
+) -> dict[str, Any]:
+    return {"contents": [_resource_contents_proto_to_dict(c) for c in proto.resource]}

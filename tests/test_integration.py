@@ -1,9 +1,8 @@
 """Loopback integration tests using McpGrpcServer and GRPCClientDispatcher."""
 
-import asyncio
 from collections.abc import AsyncIterator
-import socket
-from contextlib import closing, asynccontextmanager
+from contextlib import asynccontextmanager
+
 import grpc
 import pytest
 
@@ -14,23 +13,14 @@ import mcp.types as mcp_types
 from mcp_grpc_transport import GRPCClientDispatcher, McpGrpcServer
 
 
-def find_free_port() -> int:
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(("localhost", 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
-
-
 @asynccontextmanager
-async def run_server(server: Server) -> AsyncIterator[str]:
-    port = find_free_port()
-    address = f"localhost:{port}"
+async def run_server(server: Server, address: str) -> AsyncIterator[str]:
     async with McpGrpcServer(server, address=address):
         yield address
 
 
 @pytest.mark.anyio
-async def test_integration_tools():
+async def test_integration_tools(free_port):
     # 1. Define handlers
     async def list_tools(ctx, params):
         return mcp_types.ListToolsResult(
@@ -67,17 +57,14 @@ async def test_integration_tools():
     )
 
     # 3. Run Server and Client
-    async with run_server(server) as address:
+    async with run_server(server, f"localhost:{free_port}") as address:
         dispatcher = GRPCClientDispatcher(address)
         async with ClientSession(dispatcher=dispatcher) as session:
-            await session.initialize()
-            
-            # Test list_tools
+
             tools = await session.list_tools()
             assert len(tools.tools) == 1
             assert tools.tools[0].name == "add"
-            
-            # Test call_tool
+
             res = await session.call_tool("add", {"a": 2, "b": 3})
             assert res.is_error is False
             assert len(res.content) == 1
@@ -85,7 +72,7 @@ async def test_integration_tools():
 
 
 @pytest.mark.anyio
-async def test_integration_resources():
+async def test_integration_resources(free_port):
     async def list_resources(ctx, params):
         return mcp_types.ListResourcesResult(
             resources=[
@@ -116,24 +103,21 @@ async def test_integration_resources():
         on_read_resource=read_resource
     )
 
-    async with run_server(server) as address:
+    async with run_server(server, f"localhost:{free_port}") as address:
         dispatcher = GRPCClientDispatcher(address)
         async with ClientSession(dispatcher=dispatcher) as session:
-            await session.initialize()
-            
-            # Test list_resources
+
             resources = await session.list_resources()
             assert len(resources.resources) == 1
             assert resources.resources[0].name == "data"
-            
-            # Test read_resource
+
             res = await session.read_resource("test://data")
             assert len(res.contents) == 1
             assert res.contents[0].text == "resource contents"
 
 
 @pytest.mark.anyio
-async def test_integration_resource_templates():
+async def test_integration_resource_templates(free_port):
     async def list_resource_templates(ctx, params):
         return mcp_types.ListResourceTemplatesResult(
             resource_templates=[
@@ -150,19 +134,17 @@ async def test_integration_resource_templates():
         on_list_resource_templates=list_resource_templates
     )
 
-    async with run_server(server) as address:
+    async with run_server(server, f"localhost:{free_port}") as address:
         dispatcher = GRPCClientDispatcher(address)
         async with ClientSession(dispatcher=dispatcher) as session:
-            await session.initialize()
-            
-            # Test list_resource_templates
+
             templates = await session.list_resource_templates()
             assert len(templates.resource_templates) == 1
             assert templates.resource_templates[0].name == "template"
 
 
 @pytest.mark.anyio
-async def test_integration_error_propagation():
+async def test_integration_error_propagation(free_port):
     async def list_tools(ctx, params):
         return mcp_types.ListToolsResult(
             tools=[mcp_types.Tool(name="fail", input_schema={"type": "object"})]
@@ -180,19 +162,45 @@ async def test_integration_error_propagation():
         on_call_tool=call_tool
     )
 
-    async with run_server(server) as address:
+    async with run_server(server, f"localhost:{free_port}") as address:
         dispatcher = GRPCClientDispatcher(address)
         async with ClientSession(dispatcher=dispatcher) as session:
-            await session.initialize()
-            
+
             with pytest.raises(MCPError) as exc:
                 await session.call_tool("fail", {})
+            # Original MCP code (INVALID_PARAMS) is preserved via trailing metadata,
+            # not lossily reconstructed from gRPC's INVALID_ARGUMENT.
             assert exc.value.error.code == mcp_types.INVALID_PARAMS
             assert "planned failure" in exc.value.message
 
 
 @pytest.mark.anyio
-async def test_integration_stale_handlers_cleared():
+async def test_integration_mcp_server_high_level(free_port):
+    """End-to-end with the high-level MCPServer (decorator API).
+
+    Exercises the isinstance-based `_lowlevel_server` extraction path.
+    """
+    from mcp.server.mcpserver import MCPServer
+
+    mcp = MCPServer("hl-test-server")
+
+    @mcp.tool()
+    async def echo(text: str) -> str:
+        return text
+
+    address = f"localhost:{free_port}"
+    async with McpGrpcServer(mcp, address=address):
+        dispatcher = GRPCClientDispatcher(address)
+        async with ClientSession(dispatcher=dispatcher) as session:
+            tools = await session.list_tools()
+            assert any(t.name == "echo" for t in tools.tools)
+
+            res = await session.call_tool("echo", {"text": "hi"})
+            assert res.content[0].text == "hi"
+
+
+@pytest.mark.anyio
+async def test_integration_stale_handlers_cleared(free_port):
     grpc_server = grpc.aio.server()
     async def list_tools(ctx, params):
         return mcp_types.ListToolsResult(tools=[])
@@ -200,8 +208,7 @@ async def test_integration_stale_handlers_cleared():
     server = Server("test-server", on_list_tools=list_tools)
     app = McpGrpcServer(server, server=grpc_server)
 
-    port = find_free_port()
-    address = f"localhost:{port}"
+    address = f"localhost:{free_port}"
     grpc_server.add_insecure_port(address)
     await grpc_server.start()
 
@@ -211,7 +218,6 @@ async def test_integration_stale_handlers_cleared():
             # Runner is active, handlers are registered on the servicer.
             dispatcher = GRPCClientDispatcher(address)
             async with ClientSession(dispatcher=dispatcher) as session:
-                await session.initialize()
                 tools = await session.list_tools()
                 assert len(tools.tools) == 0
 
@@ -221,7 +227,6 @@ async def test_integration_stale_handlers_cleared():
 
         dispatcher2 = GRPCClientDispatcher(address)
         async with ClientSession(dispatcher=dispatcher2) as session2:
-            await session2.initialize() # Mocked client side
             # This call should now be rejected by the servicer with UNAVAILABLE
             with pytest.raises(MCPError) as exc_info:
                 await session2.list_tools()

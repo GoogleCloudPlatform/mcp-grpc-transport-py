@@ -29,6 +29,8 @@ Setting up the gRPC transport involves defining your server using the SDK's high
 *   **Server Setup:** See [examples/simple_tool/server.py](examples/simple_tool/server.py) for a complete standalone server example.
 *   **Client Setup:** See [examples/simple_tool/client.py](examples/simple_tool/client.py) to see how the client session connects and calls tools.
 
+> **No MCP initialize handshake.** This transport intentionally skips the MCP initialize / capability-negotiation step. Do **not** call `await session.initialize()` on a `ClientSession` bound to `GRPCClientDispatcher`; invoke tool/resource methods directly. Notifications (`session.send_notification`) are not supported either.
+
 Refer to the [Examples](#examples) section below on how to run them.
 
 ---

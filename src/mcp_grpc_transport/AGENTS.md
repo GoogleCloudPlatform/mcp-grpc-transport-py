@@ -4,8 +4,8 @@ Guidelines for editing the core transport library package.
 
 ## Architecture Context
 For an overview of the server and client implementation details, read the documentation files:
-*   [docs/server.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/docs/server.md)
-*   [docs/client.md](file:///usr/local/google/home/bpawan/workspace/official-v2/mcp-grpc-transport-py/docs/client.md)
+*   [../../docs/server.md](../../docs/server.md)
+*   [../../docs/client.md](../../docs/client.md)
 
 ---
 
