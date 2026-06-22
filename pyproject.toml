@@ -38,6 +38,5 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest-asyncio>=1.4.0", # TODO: Remove once all tests are rewritten using absltest.parameterize
     "absl-py>=2.2.0",
 ]

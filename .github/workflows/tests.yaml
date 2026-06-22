@@ -26,7 +26,3 @@ jobs:
 
     - name: Run all tests
       run: uv run python -m unittest discover -s tests
-
-    # TODO: Remove this step once it is rewritten using absltest.parameterize
-    - name: Run `e2e_call_tool_rpc` test using pytest
-      run: uv run python -m pytest tests/test_e2e_call_tool_rpc_pytest.py
