@@ -52,7 +52,7 @@ def struct_to_dict(struct: struct_pb2.Struct) -> dict[str, Any]:
 
 # ============================== Common / _meta ==============================
 
-def _set_common_meta(
+def set_common_meta(
     proto_with_common: Any,
     params: dict[str, Any] | None,
 ) -> None:
@@ -65,7 +65,7 @@ def _set_common_meta(
     proto_with_common.common.metadata.CopyFrom(dict_to_struct(meta))
 
 
-def _extract_meta(proto_with_common: Any) -> dict[str, Any] | None:
+def extract_meta(proto_with_common: Any) -> dict[str, Any] | None:
     """Pull `_meta` (camelCase contract: leading underscore is preserved) from `proto.common.metadata`."""
     if not proto_with_common.HasField("common"):
         return None
@@ -142,7 +142,7 @@ def call_tool_params_dict_to_proto(
     if arguments is not None:
         request.arguments.CopyFrom(dict_to_struct(arguments))
     proto = mcp_messages_pb2.CallToolRequest(request=request)
-    _set_common_meta(proto, params)
+    set_common_meta(proto, params)
     return proto
 
 
@@ -153,7 +153,7 @@ def call_tool_request_proto_to_params_dict(
     result: dict[str, Any] = {"name": request.request.name}
     if request.request.HasField("arguments"):
         result["arguments"] = struct_to_dict(request.request.arguments)
-    meta = _extract_meta(request)
+    meta = extract_meta(request)
     if meta is not None:
         result["_meta"] = meta
     return result
@@ -381,7 +381,7 @@ def read_resource_params_dict_to_proto(
     params: dict[str, Any],
 ) -> mcp_messages_pb2.ReadResourceRequest:
     proto = mcp_messages_pb2.ReadResourceRequest(uri=str(params.get("uri", "")))
-    _set_common_meta(proto, params)
+    set_common_meta(proto, params)
     return proto
 
 
@@ -389,7 +389,7 @@ def read_resource_request_proto_to_params_dict(
     request: mcp_messages_pb2.ReadResourceRequest,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {"uri": request.uri}
-    meta = _extract_meta(request)
+    meta = extract_meta(request)
     if meta is not None:
         result["_meta"] = meta
     return result

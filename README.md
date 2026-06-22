@@ -64,12 +64,15 @@ To run any example:
 
 This repository uses `uv` for managing python environments, formatting, and running tests.
 
+Tests use `absl.testing.absltest` (for sync) and `unittest.IsolatedAsyncioTestCase` (for async). No pytest.
+
 ### Run Tests
 ```bash
-uv run pytest
+uv run python -m unittest discover -s tests -v
 ```
 
 ### Run Tests with Coverage Report
 ```bash
-uv run pytest --cov=mcp_grpc_transport --cov-report=term-missing
+uv run coverage run --source=src/mcp_grpc_transport -m unittest discover -s tests
+uv run coverage report -m
 ```

@@ -1,17 +1,11 @@
-"""Shared fixtures for tests."""
+"""Shared test helpers (replaces the previous pytest conftest.py)."""
 
 import socket
 from contextlib import closing
 
 import grpc
-import pytest
 
 from mcp_grpc_transport import errors
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
 
 
 def find_free_port() -> int:
@@ -20,11 +14,6 @@ def find_free_port() -> int:
         s.bind(("localhost", 0))
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
-
-
-@pytest.fixture
-def free_port() -> int:
-    return find_free_port()
 
 
 class FakeAioRpcError(grpc.aio.AioRpcError):
@@ -58,18 +47,13 @@ class FakeAioRpcError(grpc.aio.AioRpcError):
         return f"FakeAioRpcError(code={self._code}, details={self._details!r})"
 
 
-@pytest.fixture
-def fake_aio_rpc_error():
-    """Factory for FakeAioRpcError instances, optionally carrying an MCP code."""
-
-    def _make(
-        code: grpc.StatusCode,
-        details: str = "",
-        mcp_code: int | None = None,
-    ) -> FakeAioRpcError:
-        trailing: tuple[tuple[str, str], ...] = ()
-        if mcp_code is not None:
-            trailing = ((errors.MCP_CODE_METADATA_KEY, str(mcp_code)),)
-        return FakeAioRpcError(code, details, trailing)
-
-    return _make
+def make_fake_aio_rpc_error(
+    code: grpc.StatusCode,
+    details: str = "",
+    mcp_code: int | None = None,
+) -> FakeAioRpcError:
+    """Build a FakeAioRpcError, optionally carrying an MCP code in trailing metadata."""
+    trailing: tuple[tuple[str, str], ...] = ()
+    if mcp_code is not None:
+        trailing = ((errors.MCP_CODE_METADATA_KEY, str(mcp_code)),)
+    return FakeAioRpcError(code, details, trailing)

@@ -127,7 +127,7 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
         context: grpc.aio.ServicerContext,
     ) -> mcp_messages_pb2.ListToolsResponse:
         params: dict[str, Any] = {}
-        meta = convert._extract_meta(request)
+        meta = convert.extract_meta(request)
         if meta is not None:
             params["_meta"] = meta
         return await self._handle_rpc(
@@ -160,7 +160,7 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
         context: grpc.aio.ServicerContext,
     ) -> mcp_messages_pb2.ListResourcesResponse:
         params: dict[str, Any] = {}
-        meta = convert._extract_meta(request)
+        meta = convert.extract_meta(request)
         if meta is not None:
             params["_meta"] = meta
         return await self._handle_rpc(
@@ -176,7 +176,7 @@ class McpServicer(mcp_pb2_grpc.McpServicer):
         context: grpc.aio.ServicerContext,
     ) -> mcp_messages_pb2.ListResourceTemplatesResponse:
         params: dict[str, Any] = {}
-        meta = convert._extract_meta(request)
+        meta = convert.extract_meta(request)
         if meta is not None:
             params["_meta"] = meta
         return await self._handle_rpc(

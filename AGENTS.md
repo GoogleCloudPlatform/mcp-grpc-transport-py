@@ -15,7 +15,7 @@ This project uses a hierarchical guidelines model. For specific files and packag
 
 *   **Tooling:** Use **`uv`** for managing dependencies and running commands. **Never use `pip` directly.**
 *   **Running Commands:** Run commands using `uv run`. For example:
-    *   To run tests: `uv run pytest`
+    *   To run tests: `uv run python -m unittest discover -s tests -v`
     *   To run formatting: `uv run ruff format .` (if ruff is added)
 *   **Adding Dependencies:** Use `uv add <package>` or `uv add --dev <package>`. Avoid manual edits to `pyproject.toml` unless strictly necessary.
 

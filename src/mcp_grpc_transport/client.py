@@ -128,7 +128,7 @@ class GRPCClientDispatcher(Dispatcher[TransportContext]):
 
         if method == "tools/list":
             request_proto = mcp_messages_pb2.ListToolsRequest()
-            convert._set_common_meta(request_proto, params_dict)
+            convert.set_common_meta(request_proto, params_dict)
             try:
                 response_proto = await self.stub.ListTools(request_proto, timeout=timeout)
             except grpc.aio.AioRpcError as e:
@@ -146,7 +146,7 @@ class GRPCClientDispatcher(Dispatcher[TransportContext]):
 
         if method == "resources/list":
             request_proto = mcp_messages_pb2.ListResourcesRequest()
-            convert._set_common_meta(request_proto, params_dict)
+            convert.set_common_meta(request_proto, params_dict)
             try:
                 response_proto = await self.stub.ListResources(request_proto, timeout=timeout)
             except grpc.aio.AioRpcError as e:
@@ -155,7 +155,7 @@ class GRPCClientDispatcher(Dispatcher[TransportContext]):
 
         if method == "resources/templates/list":
             request_proto = mcp_messages_pb2.ListResourceTemplatesRequest()
-            convert._set_common_meta(request_proto, params_dict)
+            convert.set_common_meta(request_proto, params_dict)
             try:
                 response_proto = await self.stub.ListResourceTemplates(request_proto, timeout=timeout)
             except grpc.aio.AioRpcError as e:
