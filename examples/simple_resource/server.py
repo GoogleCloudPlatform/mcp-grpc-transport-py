@@ -1,61 +1,39 @@
-"""Example MCP server with gRPC transport for simple resource and resource templates."""
+"""Simple MCP gRPC Server example showcasing Resources."""
 
 import asyncio
-from absl import app
-from absl import flags
-from absl import logging
-from mcp.server import fastmcp
-from mcp_grpc_transport.server.grpc_server import GRPCTransportSettings, serve_grpc
+from mcp.server.mcpserver import MCPServer
+from mcp_grpc_transport import McpGrpcServer
 
-_PORT = flags.DEFINE_integer("port", 50052, "Server port")
+# 1. Initialize high-level MCPServer
+mcp = MCPServer("simple-resource-server")
 
 
-def setup_server() -> fastmcp.FastMCP:
-  """Set up the FastMCP server with resource and resource templates."""
-  mcp = fastmcp.FastMCP(
-      name="Simple Resource gRPC Server",
-      instructions=(
-          "A simple MCP server demonstrating gRPC transport with a simple"
-          " resource."
-      ),
-  )
-
-  @mcp.resource("mcp://resource/simple", mime_type="text/plain")
-  def simple_resource() -> str:
+# 2. Register a static text resource
+@mcp.resource("mcp://resource/simple", mime_type="text/plain")
+async def get_simple_resource() -> str:
     """A simple resource that returns text."""
-    return "Hello from resource!"
+    return "Hello from gRPC resource!"
 
-  @mcp.resource("mcp://hostname/user/{user}/profile")
-  def user_profile_resource(user: str) -> str:
+
+# 3. Register a templated user profile resource
+@mcp.resource("mcp://hostname/user/{user}/profile")
+async def get_user_profile(user: str) -> str:
     """A templated resource for user profiles."""
-    return f"Profile for {user}"
-
-  @mcp.resource("mcp://hostname/user/{user}/document/{doc_id}")
-  def user_document_resource(user: str, doc_id: str) -> str:
-    """A templated resource for user documents."""
-    return f"Document {doc_id} for {user}"
-
-  return mcp
+    return f"Profile data for user: {user}"
 
 
-def main(argv) -> None:
-  if len(argv) > 1:
-    raise app.UsageError("Too many command-line arguments.")
-
-  mcp = setup_server()
-  logging.info("Starting MCP gRPC Server on port %s...", _PORT.value)
-  logging.info("Server will be available on localhost:%s", _PORT.value)
-  logging.info("Press Ctrl-C to stop the server")
-
-  try:
-    settings = GRPCTransportSettings(enable_reflection=True)
-    asyncio.run(serve_grpc(mcp, f"127.0.0.1:{_PORT.value}", settings))
-  except KeyboardInterrupt:
-    logging.info("Server stopped by user")
-  except Exception as e:
-    logging.error("Server error: %s", e)
-    raise
+async def main():
+    address = "localhost:50052"
+    
+    # 4. Start the gRPC Server using the context manager
+    async with McpGrpcServer(mcp, address=address) as app:
+        print(f"MCP gRPC Resource Server running at {address}")
+        print("Press Ctrl+C to stop.")
+        await app.wait_for_termination()
 
 
 if __name__ == "__main__":
-  app.run(main)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nStopping server...")

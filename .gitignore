@@ -1,3 +1,32 @@
-# Build files
-*.egg-info
+# Build and packaging
+build/
 dist/
+*.egg-info/
+
+# Python cache and byte-code
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.venv/
+venv/
+ENV/
+
+# Testing and Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.cov/
+coverage.xml
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tools caches
+.ruff_cache/
+.mypy_cache/
+.pyright/
