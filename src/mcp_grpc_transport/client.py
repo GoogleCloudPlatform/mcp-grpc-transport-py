@@ -2,7 +2,7 @@
 
 import anyio
 import anyio.abc
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import logging
 from typing import Any
 
@@ -71,6 +71,7 @@ class GRPCClientDispatcher(Dispatcher[TransportContext]):
         self,
         on_request: OnRequest,
         on_notify: OnNotify,
+        on_notify_intercept: Callable[[str, Mapping[str, Any] | None], bool] | None = None,
         *,
         task_status: anyio.abc.TaskStatus[None] = anyio.TASK_STATUS_IGNORED,
     ) -> None:
