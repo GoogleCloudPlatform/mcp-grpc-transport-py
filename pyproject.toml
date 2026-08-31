@@ -25,11 +25,11 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-    "grpcio>=1.74.0",
+    "grpcio>=1.83.1",
     "mcp==2.1.1",
     "protobuf>=6.33.5,<8.0.0",
     "pydantic>=2.11.0,<3.0.0",
-    "mcp-grpc-transport-proto==0.1.0",
+    "mcp-grpc-transport-proto==0.2.0",
 ]
 
 [project.urls]
