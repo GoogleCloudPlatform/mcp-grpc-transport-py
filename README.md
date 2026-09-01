@@ -10,8 +10,8 @@ This library replaces the default JSON-RPC-over-streams transport with a high-pe
 ## Dependencies
 
 This package requires the following core dependencies:
-*   **`mcp` (Model Context Protocol Python SDK):** Pinned to version `2.0.0a2` (the V2 pre-release providing dispatcher pluggability).
-*   **`grpcio`:** Required for asynchronous gRPC client and server communications (`grpcio>=1.74.0`).
+*   **`mcp` (Model Context Protocol Python SDK):** Pinned to version `2.1.1`.
+*   **`grpcio`:** Required for asynchronous gRPC client and server communications (`grpcio>=1.83.1`).
 *   **`mcp-grpc-transport-proto`:** Generated Protobuf message and service contracts.
 
 ## Features

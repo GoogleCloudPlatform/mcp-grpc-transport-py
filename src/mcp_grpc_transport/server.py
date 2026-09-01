@@ -10,7 +10,15 @@ import anyio.abc
 from google.protobuf.message import Message
 import grpc
 from mcp.server import MCPServer, Server
-from mcp.server.runner import ServerRunner
+from mcp.server.runner import (
+    CLIENT_CAPABILITIES_META_KEY,
+    CLIENT_INFO_META_KEY,
+    LATEST_HANDSHAKE_VERSION,
+    PROTOCOL_VERSION_META_KEY,
+    Connection,
+    _NoServerRequestsDispatchContext,
+    serve_one,
+)
 from mcp.shared.dispatcher import CallOptions, DispatchContext, Dispatcher, OnNotify, OnRequest
 from mcp.shared.exceptions import MCPError, NoBackChannelError
 from mcp.shared.transport_context import TransportContext
@@ -22,6 +30,31 @@ from mcp_grpc_transport_proto import mcp_messages_pb2
 from mcp_grpc_transport_proto import mcp_pb2_grpc
 
 logger = logging.getLogger(__name__)
+
+
+def grpc_on_request(server: Server[Any], lifespan_state: Any) -> OnRequest:
+    """Return an OnRequest callback that serves each call via serve_one with a gRPC transport Connection."""
+
+    async def handle(
+        dctx: DispatchContext[TransportContext], method: str, params: Mapping[str, Any] | None
+    ) -> dict[str, Any]:
+        meta = (params or {}).get("_meta", {})
+        protocol_version = meta.get(PROTOCOL_VERSION_META_KEY, LATEST_HANDSHAKE_VERSION)
+        connection = Connection.from_envelope(
+            protocol_version,
+            meta.get(CLIENT_INFO_META_KEY),
+            meta.get(CLIENT_CAPABILITIES_META_KEY),
+        )
+        return await serve_one(
+            server,
+            _NoServerRequestsDispatchContext(dctx),
+            method,
+            params,
+            connection=connection,
+            lifespan_state=lifespan_state,
+        )
+
+    return handle
 
 # Default grace period for managed gRPC server shutdown. None would mean
 # immediate termination, which kills in-flight RPCs; 5s gives them a chance
@@ -215,6 +248,7 @@ class GRPCServerDispatcher(Dispatcher[TransportContext]):
         self,
         on_request: OnRequest,
         on_notify: OnNotify,
+        on_notify_intercept: Callable[[str, Mapping[str, Any] | None], bool] | None = None,
         *,
         task_status: anyio.abc.TaskStatus[None] = anyio.TASK_STATUS_IGNORED,
     ) -> None:
@@ -286,7 +320,6 @@ class McpGrpcServer:
         self.dispatcher = GRPCServerDispatcher(self.servicer)
         self._exit_stack = AsyncExitStack()
         self._tg: anyio.abc.TaskGroup | None = None
-        self._runner: ServerRunner | None = None
 
     async def start(self) -> None:
         """Start the gRPC server (if managed) and the MCP runner."""
@@ -304,18 +337,16 @@ class McpGrpcServer:
             self.mcp_server.lifespan(self.mcp_server)
         )
 
-        self._runner = ServerRunner(
-            server=self.mcp_server,
-            dispatcher=self.dispatcher,
-            lifespan_state=lifespan_context,
-            init_options=self.mcp_server.create_initialization_options(),
-            has_standalone_channel=False,
-            stateless=True,
-        )
+        on_request = grpc_on_request(self.mcp_server, lifespan_context)
+
+        async def on_notify(
+            dctx: DispatchContext[TransportContext], method: str, params: Mapping[str, Any] | None
+        ) -> None:
+            raise NoBackChannelError(method)
 
         self._tg = anyio.create_task_group()
         await self._exit_stack.enter_async_context(self._tg)
-        await self._tg.start(self._runner.run)
+        await self._tg.start(self.dispatcher.run, on_request, on_notify)
 
     async def stop(self, grace: float | None = DEFAULT_STOP_GRACE_SECONDS) -> None:
         """Stop the MCP runner and (if managed) the gRPC server.
